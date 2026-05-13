@@ -1,0 +1,982 @@
+---
+title: "Wood-poppy Integrated Population Model"
+author: "Amy E. Wiedenfeld"
+date: "`r Sys.Date()`"
+output:
+  html_notebook: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+Construct an integrated population model (IPM) for the wood-poppy,
+using multiple sets of data
+
+Load data for the model. This includes the capture histories for each
+ plant, the wood-poppy size data for each year, population counts,
+ and the number of untagged plants counted at each population
+```{r message=FALSE, warning=FALSE}
+#Load libraries
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(IPMbook)
+library(jagsUI)
+
+#Load data
+capt_hist <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/MarkRecapture_Multistate.csv", colClasses='character')
+# Horizontal format of 
+Wood_Poppy_Data <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/Wood_Poppy_All.csv")
+#Vertical merge of tagged plants
+Wood_Poppy_Vertical <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/Wood_Poppy_Vertical.csv")
+#population counts
+Counts <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/Count_Data.csv")
+#untagged but counted plants
+Untagged <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/Untagged_Data.csv")
+# Data on individual plants from 2020-2021
+WSP_Data <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/WSP_Data_Clean.csv")
+
+```
+
+Number of Populations
+```{r echo=FALSE}
+popn <- Wood_Poppy_Data %>%
+  distinct(Population) %>%
+  arrange(Population) %>%
+  mutate(PopN = 1:length(unique(Wood_Poppy_Data$Population)))
+
+npop <- nrow(popn)
+npop
+```
+
+# Format Data
+
+Restructure the data to fit the format for the models
+Data need to be formatted so that populations are rows and years are
+ columns, always beginning with the first year data were collected (2020),
+ even if data were not collected at a particular site that year. The
+ populations also need to be in alphabetical order, so that the rows
+ match up in each dataset.
+ 
+```{r}
+################################################################################
+########## Capture Histories ###################################################
+################################################################################
+
+
+################################################################################
+########## Population Counts ###################################################
+################################################################################
+#For seed data below, need to know the proportion of plants that
+# were tagged at Ilderton
+Ilderton_Prop <- Wood_Poppy_Vertical %>%
+  filter(Population == "Ilderton") %>%
+  group_by(Year) %>%
+  summarise(n = n()) %>%
+  full_join(Counts %>%
+              filter(Population == "Ilderton")) %>%
+  mutate(Prop_of_Tot = n/Count) %>%
+  ungroup() %>%
+  summarise(Prop_of_Tot = mean(Prop_of_Tot, na.rm = T)) %>%
+  pull(Prop_of_Tot)
+
+
+
+Counts[nrow(Counts) + 1, ] <- c("Stylophorum", "Meadowlily", 2023, NA_integer_)
+Counts[nrow(Counts) + 1, ] <- c("Stylophorum", "Meadowlily", 2024, NA_integer_)
+Counts[nrow(Counts) + 1, ] <- c("Stylophorum", "Ilderton", 2022, NA_integer_)
+Counts[nrow(Counts) + 1, ] <- c("Stylophorum", "RBG", 2020, NA_integer_)
+Counts[nrow(Counts) + 1, ] <- c("Stylophorum", "RBG", 2022, NA_integer_)
+Counts[nrow(Counts) + 1, ] <- c("Stylophorum", "RBG", 2023, NA_integer_)
+Counts[nrow(Counts) + 1, ] <- c("Stylophorum", "RBG", 2024, NA_integer_)
+Counts <- Counts %>%
+    left_join(popn, by = "Population") %>%
+  filter(Species == "Stylophorum") %>%
+  mutate_at(c('Year', 'Count'), as.numeric) %>%
+  arrange(Population, Year) %>%
+  rename(Counts = Count) %>%
+  dplyr::select(PopN, Year, Counts)
+
+#fix format
+Counts <- Counts %>%
+  pivot_wider(names_from = Year, values_from = Counts) %>%
+  column_to_rownames(var = "PopN")
+```
+
+Remove seedlings from count data
+```{r}
+Counts2 <- Wood_Poppy_Vertical %>%
+  group_by(Population, Year) %>%
+  filter(Height_cm > 9) %>%
+  summarise(Plants = n())
+
+Counts3 <- WSP_Data %>%
+  mutate(Year = year(ymd(Date))) %>%
+  group_by(Population, Year) %>%
+  summarise(Small = sum(Less_15_cm, na.rm = T),
+            Big = sum(More_15_cm, na.rm = T)) %>%
+  filter(!is.na(Small)) %>%
+  rowwise() %>%
+  mutate(Plants = sum(c_across(Small:Big))) %>%
+  dplyr::select(Population, Year, Plants)
+
+
+Counts4 <- Untagged %>%
+  group_by(Population, Year) %>%
+  summarise(Small = sum(Less_15_cm),
+            Big = sum(More_15_cm)) %>%
+  filter(!is.na(Small)) %>%
+  rowwise() %>%
+  mutate(Plants2 = sum(c_across(Small:Big))) %>%
+  dplyr::select(Population, Year, Plants2) %>%
+  ungroup() %>%
+  full_join(Counts2) %>%
+  group_by(Population, Year) %>%
+  summarise(Plants2 = sum(Plants2),
+            Plants = sum(Plants)) %>%
+  ungroup() %>%
+  rowwise() %>%
+  mutate(Plants3 = sum(c_across(Plants2:Plants), na.rm = T)) %>%
+  dplyr::select(Population, Year, Plants = Plants3)
+
+Counts3 <- rbind(Counts4, Counts3)
+
+Counts3 <- Counts3 %>%
+  group_by(Population, Year) %>%
+  summarise(Plants = sum(Plants)) %>%
+  ungroup() %>%
+  pivot_wider(names_from = Year, values_from = Plants) %>%
+  dplyr::select(Population, `2020`, `2021`, `2022`, `2023`, `2024`, `2025`) %>%
+  dplyr::select(-Population)
+  
+Counts3
+
+Counts3[2,5] <- 0 # only seedlings at Denfield
+Counts3[2,6] <- 0 # only seedlings at Denfield
+Counts3[6,3] <- NA
+Counts3[6,4] <- NA
+Counts3[6,5] <- NA
+Counts3[6,2] <- 542
+
+# Fix Ilderton
+Counts3[4,3] <- NA
+Counts3[4,4] <- 1145
+Counts3[4,5] <- 927
+Counts3[4,6] <- 1174
+```
+
+Combine all needed data
+```{r}
+
+# Different start years for recapture at different sites
+# WSP did not tag at Ilderton or RBG, so no capture data
+# until 2022
+start <- c(1, 1, 1, 3, 1, 3)
+end <- c(6, 6, 6, 6, 3, 6)
+# Set the start and end years for the population counts
+# RBG was only counted in 2021 and 2025, and no data on Meadowlily
+# after 2022
+start_c <- c(1, 1, 1, 1, 1, 2)
+end_c <- c(6, 6, 6, 6, 3, 6)
+
+#set initial population sizes
+pinit <- dUnif(lower = rep(1, 6), upper = apply(Counts, 1, max, na.rm = T))
+
+# Set initial seed number sizes--this is the max number of seeds
+# produced in a year at each population (see the priors section)
+#pinitS <- dUnif(lower = c(1,1,1,1,1,1), upper = c( 11696,2079, 136063,2079,37424,19956))
+pinitS <- c(11696,500, 136063,32079,37424,19956)
+
+# Gather up all the data into a list for JAGS
+# Be sure that the m-arrays are formatted properly,
+# and that the number of occasions dimension is correct
+# n.occ should be 5 (for now)
+jags.data <- list(n.occ = 5, # 5 capture occasions
+                  Counts = Counts3,
+                  npop = npop,
+                  start = start,
+                  end = end,
+                  start_c = start_c,
+                  end_c = end_c,
+                  pinit = pinit,
+                  pinitS = pinitS#,
+                  #K = K
+                  )
+
+# Save jags.data as an RDS object so I don't have to run everything all the time
+# saveRDS(jags.data, file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_25.rds")
+```
+
+## Multistate Mark Recapture
+```{r}
+jags.data <- readRDS("~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_25.rds")
+
+################################################################################
+########## Capture Histories ###################################################
+################################################################################
+# First up, stage of each plant at the first time it was seen
+Age <- Wood_Poppy_Vertical %>%
+  # Add population numbers (rather than names)
+  left_join(popn, by = "Population") %>%
+  dplyr::select(PopN, Individual, Year, Height_Class) %>%
+  mutate(Height_Class = case_when(Height_Class == "0" ~ NA_integer_,
+                                  TRUE ~ Height_Class)) %>%
+  group_by(PopN, Individual) %>%
+  mutate(first = dplyr::first(na.omit(Height_Class))) %>%
+  distinct(Individual, .keep_all = T) %>%
+  filter(!is.na(first)) %>% #####
+ungroup() %>%
+  arrange(PopN, Individual) %>%
+  dplyr::select(-Height_Class)
+
+Ages <- Age %>%
+  pull(first)
+
+length(Ages)
+
+# Capture Histories for each plant
+Capt_hist2 <- capt_hist %>%
+  left_join(popn, by = "Population") %>%
+  right_join(Age, by = c("PopN", "Individual")) %>% #keep only ones we have ages for
+  rename("Year_1" = "X2020", "Year_2" = "X2021", "Year_3" = "X2022",
+         "Year_4" = "X2023", "Year_5" = "X2024", "Year_6" = "X2025") %>%
+  mutate_at(c("Year_1", "Year_2", "Year_3", "Year_4", "Year_5", "Year_6"), as.numeric) %>%
+  #Meadowlily wasn't surveyed, so there is no data--note that this means
+  # the new tags in 2022 simply 'vanish' in the model
+  mutate(Year_4 = case_when(Population == "Meadowlily" ~ NA_real_,
+                            TRUE ~ Year_4)) %>%
+  mutate(Year_5 = case_when(Population == "Meadowlily" ~ NA_real_,
+                            TRUE ~ Year_5)) %>%
+  mutate(Year_6 = case_when(Population == "Meadowlily" ~ NA_real_,
+                            TRUE ~ Year_6)) %>%
+  arrange(Population, Individual) %>%
+  dplyr::select(-Population, -Individual, -Year, -first, -PopN) 
+
+head(Capt_hist2)
+str(Capt_hist2)
+
+nrow(Capt_hist2)
+
+# Format population numbers the same as the capture histories
+Population <- Wood_Poppy_Vertical %>%
+  #anti_join(Sizes, by = c("Population", "Individual")) %>%
+  left_join(popn, by = "Population") %>%
+  dplyr::select(PopN, Individual, Year, Height_Class) %>%
+  mutate(Height_Class = case_when(Height_Class == "0" ~ NA_integer_,
+                                  TRUE ~ Height_Class)) %>%
+  group_by(PopN, Individual) %>%
+  mutate(first = dplyr::first(na.omit(Height_Class))) %>%
+  distinct(Individual, .keep_all = T) %>%
+  filter(!is.na(first)) %>% #####
+ungroup() %>%
+  arrange(PopN, Individual) %>%
+  pull(PopN)
+################################################################################
+########## M-Array #############################################################
+################################################################################
+
+# Capture Histories for each plant
+Capt_hist2 <- capt_hist %>%
+  left_join(popn, by = "Population") %>%
+  right_join(Age, by = c("PopN", "Individual")) %>% #keep only ones we have ages for
+  rename("Year_1" = "X2020", "Year_2" = "X2021", "Year_3" = "X2022",
+         "Year_4" = "X2023", "Year_5" = "X2024", "Year_6" = "X2025") %>%
+  mutate_at(c("Year_1", "Year_2", "Year_3", "Year_4", "Year_5", "Year_6"), as.numeric) %>%
+  #Meadowlily wasn't surveyed, so there is no data--note that this means
+  # the new tags in 2022 simply 'vanish' in the model
+  mutate(Year_4 = case_when(Population == "Meadowlily" ~ NA_real_,
+                            TRUE ~ Year_4)) %>%
+  mutate(Year_5 = case_when(Population == "Meadowlily" ~ NA_real_,
+                            TRUE ~ Year_5)) %>%
+  mutate(Year_6 = case_when(Population == "Meadowlily" ~ NA_real_,
+                            TRUE ~ Year_6)) %>%
+  arrange(Population, Individual)
+
+##### Bayfield #############################################
+Bmarr <- Capt_hist2 %>%
+  filter(Population == "Bayfield") %>%
+  dplyr::select(-Population, -Individual, -Year, -first, -PopN)
+Bmarr <- as.matrix(Bmarr)
+
+marr <- marray(Bmarr)
+# Bundle data
+# Calculate the number of states
+ns <- length(unique(as.numeric(Bmarr))) - 1
+
+rel  <- rowSums(marr)
+zero <- matrix(0, ns, ns)
+ones <- diag(ns)
+
+# Subset jags.data (loaded above) for just population 1
+jags.data$n.occ <- 6
+jags.data$Counts <- as.vector(t(jags.data$Counts[1,]))
+jags.data$npop <- 1
+jags.data$start <- jags.data$start[1]
+jags.data$start_c <- jags.data$start_c[1]
+jags.data$end <- jags.data$end[1]
+jags.data$end_c <- jags.data$end_c[1]
+jags.data$pinit <- jags.data$pinit[1,]
+jags.data$pinitS <- jags.data$pinitS[1]
+jags.data$K <- 0
+
+jags.data2 <- jags.data
+
+jags.data2$marr <- marr
+jags.data2$ns <- ns
+jags.data2$rel <- rel
+jags.data2$zero <- zero
+jags.data2$ones <- ones
+
+jags.data2$nyears <-jags.data2$n.occ
+
+# saveRDS(jags.data2, file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Bayfield.rds")
+
+##### Denfield #############################################
+Dmarr <- Capt_hist2 %>%
+  filter(Population == "Denfield") %>%
+  dplyr::select(-Population, -Individual, -Year, -first, -PopN)
+Dmarr <- as.matrix(Dmarr)
+
+marr <- marray(Dmarr)
+# Bundle data
+# Calculate the number of states
+ns <- length(unique(as.numeric(Dmarr))) - 1
+
+rel  <- rowSums(marr)
+zero <- matrix(0, ns, ns)
+ones <- diag(ns)
+
+jags.data$n.occ <- 6
+jags.data$Counts <- as.vector(t(jags.data$Counts[2,]))
+jags.data$npop <- 2
+jags.data$start <- jags.data$start[2]
+jags.data$start_c <- jags.data$start_c[2]
+jags.data$end <- jags.data$end[2]
+jags.data$end_c <- jags.data$end_c[2]
+jags.data$pinit <- jags.data$pinit[2,]
+jags.data$pinitS <- jags.data$pinitS[2]
+jags.data$K <- 0
+
+jags.data2 <- jags.data
+
+jags.data2$marr <- marr
+jags.data2$ns <- ns
+jags.data2$rel <- rel
+jags.data2$zero <- zero
+jags.data2$ones <- ones
+
+jags.data2$nyears <-jags.data2$n.occ
+
+# saveRDS(jags.data2, file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Denfield.rds")
+
+##### Fanshawe #############################################
+Fmarr <- Capt_hist2 %>%
+  filter(Population == "Fanshawe") %>%
+  dplyr::select(-Population, -Individual, -Year, -first, -PopN)
+Fmarr <- as.matrix(Fmarr)
+
+marr <- marray(Fmarr)
+# Bundle data
+# Calculate the number of states
+ns <- length(unique(as.numeric(Fmarr))) - 1
+
+rel  <- rowSums(marr)
+zero <- matrix(0, ns, ns)
+ones <- diag(ns)
+
+jags.data$n.occ <- 6
+jags.data$Counts <- as.vector(t(jags.data$Counts[3,]))
+jags.data$npop <- 3
+jags.data$start <- jags.data$start[3]
+jags.data$start_c <- jags.data$start_c[3]
+jags.data$end <- jags.data$end[3]
+jags.data$end_c <- jags.data$end_c[3]
+jags.data$pinit <- jags.data$pinit[3,]
+jags.data$pinitS <- jags.data$pinitS[3]
+jags.data$K <- 0
+
+jags.data2 <- jags.data
+
+jags.data2$marr <- marr
+jags.data2$ns <- ns
+jags.data2$rel <- rel
+jags.data2$zero <- zero
+jags.data2$ones <- ones
+
+jags.data2$nyears <-jags.data2$n.occ
+# saveRDS(jags.data2, file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Fanshawe.rds")
+
+##### Ilderton #############################################
+Imarr <- Capt_hist2 %>%
+  filter(Population == "Ilderton") %>%
+  dplyr::select(-Population, -Individual, -Year, -first, -PopN)
+Imarr <- as.matrix(Imarr)
+
+marr <- marray(Imarr)
+# Bundle data
+# Calculate the number of states
+ns <- length(unique(as.numeric(Imarr))) - 1
+
+rel  <- rowSums(marr)
+zero <- matrix(0, ns, ns)
+ones <- diag(ns)
+
+jags.data$n.occ <- 6
+jags.data$Counts <- as.vector(t(jags.data$Counts[4,]))
+jags.data$npop <- 4
+jags.data$start <- jags.data$start[4]
+jags.data$start_c <- jags.data$start_c[4]
+jags.data$end <- jags.data$end[4]
+jags.data$end_c <- jags.data$end_c[4]
+jags.data$pinit <- jags.data$pinit[4,]
+jags.data$pinitS <- jags.data$pinitS[4]
+jags.data$K <- 0
+
+jags.data2 <- jags.data
+
+jags.data2$marr <- marr
+jags.data2$ns <- ns
+jags.data2$rel <- rel
+jags.data2$zero <- zero
+jags.data2$ones <- ones
+
+jags.data2$nyears <-jags.data2$n.occ
+
+# saveRDS(jags.data2, file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Ilderton.rds")
+
+##### Meadowlily ###########################################
+Mmarr <- Capt_hist2 %>%
+  filter(Population == "Meadowlily") %>%
+  dplyr::select(-Population, -Individual, -Year, -first, -PopN)
+Mmarr <- as.matrix(Mmarr)
+
+marr <- marray(Mmarr)
+
+# Bundle data
+# Calculate the number of states
+ns <- length(unique(as.numeric(Mmarr))) - 1
+
+rel  <- rowSums(marr)
+zero <- matrix(0, ns, ns)
+ones <- diag(ns)
+
+jags.data$n.occ <- 6
+jags.data$Counts <- as.vector(t(jags.data$Counts[5,]))
+jags.data$npop <- 5
+jags.data$start <- jags.data$start[5]
+jags.data$start_c <- jags.data$start_c[5]
+jags.data$end <- jags.data$end[5]
+jags.data$end_c <- jags.data$end_c[5]
+jags.data$pinit <- jags.data$pinit[5,]
+jags.data$pinitS <- jags.data$pinitS[5]
+jags.data$K <- 0
+
+jags.data2 <- jags.data
+
+jags.data2$marr <- marr
+jags.data2$ns <- ns
+jags.data2$rel <- rel
+jags.data2$zero <- zero
+jags.data2$ones <- ones
+
+jags.data2$nyears <-jags.data2$n.occ
+
+# saveRDS(jags.data2, file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Meadowlily.rds")
+
+###### RBG #################################################
+Rmarr <- Capt_hist2 %>%
+  filter(Population == "RBG") %>%
+  dplyr::select(-Population, -Individual, -Year, -first, -PopN)
+Rmarr <- as.matrix(Rmarr)
+
+marr <- marray(Rmarr)
+
+# Bundle data
+# Calculate the number of states
+ns <- length(unique(as.numeric(Rmarr))) - 1
+
+rel  <- rowSums(marr)
+zero <- matrix(0, ns, ns)
+ones <- diag(ns)
+
+jags.data$n.occ <- 6
+jags.data$Counts <- as.vector(t(jags.data$Counts[6,]))
+jags.data$npop <- 6
+jags.data$start <- jags.data$start[6]
+jags.data$start_c <- jags.data$start_c[6]
+jags.data$end <- jags.data$end[6]
+jags.data$end_c <- jags.data$end_c[6]
+jags.data$pinit <- jags.data$pinit[6,]
+jags.data$pinitS <- jags.data$pinitS[6]
+jags.data$K <- 0
+
+jags.data2 <- jags.data
+
+jags.data2$marr <- marr
+jags.data2$ns <- ns
+jags.data2$rel <- rel
+jags.data2$zero <- zero
+jags.data2$ones <- ones
+
+jags.data2$nyears <-jags.data2$n.occ
+
+# saveRDS(jags.data2, file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_RBG.rds")
+```
+
+# JAGS Model
+
+## JAGS settings
+```{r Settings}
+# LOad data
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_25.rds")
+
+# Initial values
+inits <- function(){
+  list(mean.logit.sy = runif(1, 0, 1), mean.logit.sa = runif(1, 0, 1))
+}
+
+# Parameters monitored
+# These are the parameters that JAGS will keep track of, and what will be in
+# the output
+parameters <- c('N', 'Ntot', 'ann.growth.rate', 'mean.se', 'mean.germ',
+                'mean.fl', 'sy', 'sj', 'sa', 'g1', 'g2', 'mean.sy',
+                'mean.sj', 'mean.sa', 'mean.g1', 'mean.g2', 'mean.py',
+                'mean.pj', 'mean.pa', 'sigma.sy', 'sigma.sj', 'sigma.sa',
+                'sigma.g1', 'sigma.g2'
+                )
+```
+
+## Bayfield
+
+Create a text file of the JAGS model first
+```{r Model}
+# Model from Michael Schaub
+cat(file = "IPM_Bayfield.txt", "
+
+# Priors
+model {
+
+# Priors
+
+mean.sy ~ dunif(0, 1)
+mean.sj ~ dunif(0, 1)
+mean.sa ~ dunif(0, 1)
+mean.g1 ~ dunif(0, 1)
+mean.g2 ~ dunif(0, 1)
+mean.pj ~ dunif(0, 1)
+mean.py ~ dunif(0, 1)
+mean.pa ~ dunif(0, 1)
+
+
+for (t in 1:(nyears-1+K)){
+  #Seedlings
+  sy[t] <- mean.sy
+  # Small plants
+  sj[t] <- mean.sj
+  # Large plants
+  sa[t] <- mean.sa
+
+  g1[t] <- mean.g1
+  g2[t] <- mean.g2
+}
+
+for (t in 1:(nyears-1)){
+  py[t] <- mean.py       # recapture rate as seedling
+  pj[t] <- mean.pj       # recapture rate as small plant
+  pa[t] <- mean.pa       # recapture rate as large plant	
+}
+
+
+# Average germination rate
+mean.germ ~ dbeta(105+1, (2025-105+1))   # instead of fixing it, use as a prior
+
+for (t in 1:(nyears+K)){
+  # Flowering
+  fl[t,1] <- mean.fl[1]   # probability of flowering small plants
+  fl[t,2] <- mean.fl[2]   # probability of flowering large plants
+  
+  se[t,1] <- mean.se[1]   # number seeds/plant for small plants
+  se[t,2] <- mean.se[2]   # number seeds/plant for large plants
+
+  germ[t] <- mean.germ    # Probability of seed germination  
+}
+
+mean.se[1] ~ dpois(0.461)  # number seeds/plant for small plants
+mean.se[2] ~ dpois(144.29) # number seeds/plant for large plants 
+mean.fl[1] ~ dunif(0, 1)   # probability of flowering small plants
+mean.fl[2] ~ dunif(0, 1)   # probability of flowering small plants
+
+
+# Population count data (state-space model) ##################################
+# Model for the initial stage-specific population sizes: uniform priors
+
+N[1,start_c] ~ dcat(piniS)  # Seedlings
+N[2,start_c] ~ dcat(piniP)  # Small plants
+N[3,start_c] ~ dcat(piniP)  # Large plants
+
+# Process model over time: our model of population dynamics
+# This is the life-cycle diagram
+
+for (t in (start_c + 1):(end + K)){
+  ## Seedlings
+  N[1,t] ~ dpois(N[2,t-1] * fl[t-1,1] * se[t-1,1] * germ[t] + N[3,t-1] * fl[t-1,2] * se[t-1,2] * germ[t] + sy[t-1] * (1-g1[t-1]) * N[1,t-1])   
+
+  ## Small plants
+  N[2,t] ~ dpois(sy[t-1] * g1[t-1] * N[1,t-1] + sj[t-1] * (1-g2[t-1]) * N[2,t-1])
+
+  # Large plants
+  N[3,t] ~ dpois(sj[t-1] * g2[t-1] * N[2,t-1] + sa[t-1] * N[3,t-1])
+}
+
+
+# Observation model
+# Counts exclude seedlings because they are very hard to find and count
+for (t in start_c:end_c){
+  Counts[t] ~ dpois(N[2,t] + N[3,t]) #### observed count is sum of stage classes
+}
+
+########################################################################
+########################################################################
+
+# Multistate data
+  # Define state-transition and re-encounter probabilities
+  for (t in 1:(nyears-1)){
+    psi[1,t,1] <- sy[t] * (1-g1[t])
+    psi[1,t,2] <- sy[t] * g1[t]
+    psi[1,t,3] <- 0
+
+    psi[2,t,1] <- 0
+    psi[2,t,2] <- sj[t] * (1-g2[t])
+    psi[2,t,3] <- sj[t] * g2[t]
+
+    psi[3,t,1] <- 0
+    psi[3,t,2] <- 0
+    psi[3,t,3] <- sa[t]
+
+    po[1,t] <- py[t]
+    po[2,t] <- pj[t]
+    po[3,t] <- pa[t]	
+  }
+
+  # From here onwards, no changes needed regardless of which model is fitted
+  # Calculate probability of non-encounter (dq) and reshape the array for the encounter
+  # probabilities
+  for (t in 1:(nyears-1)){
+    for (s in 1:ns){
+      dp[s,t,s] <- po[s,t]
+      dq[s,t,s] <- 1-po[s,t]
+    } #s
+    for (s in 1:(ns-1)){
+      for (m in (s+1):ns){
+        dp[s,t,m] <- 0
+        dq[s,t,m] <- 0
+      } #s
+    } #m
+    for (s in 2:ns){
+      for (m in 1:(s-1)){
+        dp[s,t,m] <- 0
+        dq[s,t,m] <- 0
+      } #s
+    } #m
+  } #t
+
+  # Define the multinomial likelihood
+  for (t in 1:((nyears-1)*ns)){
+    marr[t,1:(nyears *ns-(ns-1))] ~ dmulti(pi[t,], rel[t])
+  }
+
+  # Define cell probabilities of the multistate m-array
+  # Matrix U: product of probabilities of state-transition and non-encounter (needed because
+  # there is no product function for matrix multiplication in JAGS)
+  for (t in 1:(nyears-2)){
+    U[(t-1)*ns+(1:ns),(t-1)*ns+(1:ns)] <- ones
+    for (j in (t+1):(nyears-1)){
+      U[(t-1)*ns+(1:ns),(j-1)*ns+(1:ns)] <- U[(t-1)*ns+(1:ns),(j-2)*ns+(1:ns)] %*% psi[,j-1,] %*% dq[,j-1,]
+    } #j
+  } #t
+  U[(nyears-2)*ns+(1:ns), (nyears-2)*ns+(1:ns)] <- ones
+
+  for (t in 1:(nyears-2)){
+    # Diagonal
+    pi[(t-1)*ns+(1:ns),(t-1)*ns+(1:ns)] <- U[(t-1)*ns+(1:ns),(t-1)*ns+(1:ns)] %*% psi[,t,] %*% dp[,t,]
+    # Above main diagonal
+    for (j in (t+1):(nyears-1)){
+      pi[(t-1)*ns+(1:ns),(j-1)*ns+(1:ns)] <- U[(t-1)*ns+(1:ns),(j-1)*ns+(1:ns)] %*% psi[,j,] %*% dp[,j,]
+    } #j
+  } #t
+  pi[(nyears-2)*ns+(1:ns),(nyears-2)*ns+(1:ns)] <- psi[,nyears-1,] %*% dp[,nyears-1,]
+
+  # Below main diagonal
+  for (t in 2:(nyears-1)){
+    for (j in 1:(t-1)){
+      pi[(t-1)*ns+(1:ns),(j-1)*ns+(1:ns)] <- zero
+    } #j
+  } #t
+
+  # Last column: probability of non-recapture
+  for (t in 1:((nyears-1)*ns)){
+    pi[t,(nyears*ns-(ns-1))] <- 1-sum(pi[t,1:((nyears-1)*ns)])
+  } #t  
+
+##############################################################################
+##############################################################################
+
+# Derived parameters 
+# Annual population growth rate
+for (t in start_c:(end-1 + K)){
+  ann.growth.rate[t] <- (N[1,t+1] + N[2, t+1] + N[3,t+1]) / (N[1,t] + N[2,t] + N[3,t] + 0.00000001)
+}
+
+# Total population size
+for (t in start_c:(end+K)){
+  Ntot[t] <- N[1,t] + N[2,t] + N[3,t] #### add pop size of each age class
+}
+} # end model
+
+")
+
+```
+
+Run Model
+```{r Run model-Bayfield}
+
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Bayfield.rds")
+
+# set projection period if needed
+jags.data$K <- 50
+
+jags.data$piniS <- dUnif(1, 500)
+jags.data$piniP <- dUnif(5, 50)
+
+# MCMC settings
+ni <- 20000;  nb <- 10000;  nc <- 4; nt <- 10;  na <- 3000
+# Runs for about 0.5 minutes
+
+# Call JAGS, check convergence and summarize posteriors
+startTime <- Sys.time()
+
+out2 <- jags(jags.data, inits, parameters, "~/Research/Data/Population Models/IntegratedPopModel/IPM_Bayfield.txt",
+             n.iter = ni, n.burnin = nb, n.chains = nc,
+             n.thin = nt, n.adapt = na, parallel = T, set.seed(1))
+
+endTime <- Sys.time(); endTime - startTime
+
+# After the model runs, check the trace plots to confirm convergence
+# The model I have now has pretty good convergence
+# All Rhat values need to be less than 1.1
+
+# traceplot(out2)
+
+# Print the output of the model
+ print(out2, 3)
+
+#save model output
+# saveRDS(out2, file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_B.rds")
+```
+
+## Denfield
+
+```{r Run model-Denfield}
+# Subset jags.data (loaded above) for just population 2
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Denfield.rds")
+
+# Set projection period 
+jags.data$K <- 50
+
+jags.data$piniS <- dUnif(1, 500)
+jags.data$piniP <- dUnif(5, 50)
+
+# Fix the m-array
+jags.data$marr[1,2] <- 1
+jags.data$marr[1,3] <- 0
+
+jags.data$marr[4,5] <- 1
+jags.data$marr[4,6] <- 0
+
+# I think maybe I should use zero for the count in 2023, since there were no plants
+jags.data$Counts[4] <- 0
+
+# MCMC settings
+ni <- 20000;  nb <- 10000;  nc <- 4; nt <- 10;  na <- 3000
+# Runs for about 0.5 minutes
+
+# Call JAGS, check convergence and summarize posteriors
+startTime <- Sys.time()
+
+out2 <- jags(jags.data, inits, parameters, "~/Research/Data/Population Models/IntegratedPopModel/IPM_Bayfield.txt",
+             n.iter = ni, n.burnin = nb, n.chains = nc,
+             n.thin = nt, n.adapt = na, parallel = T, set.seed(1))
+
+endTime <- Sys.time(); endTime - startTime
+
+# After the model runs, check the trace plots to confirm convergence
+# The model I have now has pretty good convergence
+# All Rhat values need to be less than 1.1
+
+# traceplot(out2)
+
+# Print the output of the model
+ print(out2, 3)
+
+#save model output
+# saveRDS(out2, file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_D.rds")
+```
+
+## Fanshawe
+
+```{r Run model-Fanshawe}
+
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Fanshawe.rds")
+
+jags.data$K <- 50
+
+jags.data$piniS <- dUnif(1, 500)
+jags.data$piniP <- dUnif(5, 50)
+
+# MCMC settings
+
+ni <- 20000;  nb <- 10000;  nc <- 4; nt <- 10;  na <- 3000
+# Runs for about 0.5 minutes
+
+# Call JAGS, check convergence and summarize posteriors
+startTime <- Sys.time()
+
+out2 <- jags(jags.data, inits, parameters, "~/Research/Data/Population Models/IntegratedPopModel/IPM_Bayfield.txt",
+             n.iter = ni, n.burnin = nb, n.chains = nc,
+             n.thin = nt, n.adapt = na, parallel = T, set.seed(1))
+
+endTime <- Sys.time(); endTime - startTime
+
+# After the model runs, check the trace plots to confirm convergence
+# All Rhat values need to be less than 1.1
+
+# traceplot(out2)
+
+# Print the output of the model
+ print(out2, 3)
+
+#save model output
+# saveRDS(out2, file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_F.rds")
+```
+
+## Ilderton
+
+```{r Run model-Ilderton}
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Ilderton.rds")
+
+jags.data$K <- 50
+
+jags.data$piniS <- dUnif(1, 500)
+jags.data$piniP <- dUnif(500, 1000) # this is different compared to Bayfield, because of larger population size
+
+## Fix m-array
+jags.data$marr[7,8] <- 2
+jags.data$marr[7,9] <- 0
+jags.data$marr[13,14] <- 2
+jags.data$marr[13,15] <- 0
+
+# MCMC settings
+ni <- 20000;  nb <- 10000;  nc <- 4; nt <- 10;  na <- 3000
+# Runs for about 1.75 minutes
+
+# Call JAGS, check convergence and summarize posteriors
+startTime <- Sys.time()
+
+out2 <- jags(jags.data, inits, parameters, "~/Research/Data/Population Models/IntegratedPopModel/IPM_Bayfield.txt",
+             n.iter = ni, n.burnin = nb, n.chains = nc,
+             n.thin = nt, n.adapt = na, parallel = T, set.seed(1))
+
+endTime <- Sys.time(); endTime - startTime
+
+# After the model runs, check the trace plots to confirm convergence
+# The model I have now has pretty good convergence, but the vs2 is
+# a little bad
+# All Rhat values need to be less than 1.1
+
+# traceplot(out2)
+
+# Print the output of the model
+ print(out2, 3)
+
+#save model output
+# saveRDS(out2, file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_I.rds")
+```
+
+## RBG
+
+```{r Run model-RBG}
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_RBG.rds")
+
+jags.data$K <- 50
+
+jags.data$piniS <- dUnif(1, 500)
+jags.data$piniP <- dUnif(500, 1000) # this is different compared to Bayfield, because of larger population size
+
+## Fix m-array
+jags.data$marr[7,8] <- 1
+jags.data$marr[7,9] <- 0
+jags.data$marr[7,11] <- 1
+jags.data$marr[7,12] <- 0
+jags.data$marr[10,11] <- 2
+jags.data$marr[10,12] <- 0
+
+# MCMC settings
+ni <- 20000;  nb <- 10000;  nc <- 4; nt <- 10;  na <- 3000
+# Runs about 1.75 minutes
+
+# Call JAGS, check convergence and summarize posteriors
+startTime <- Sys.time()
+
+out2 <- jags(jags.data, inits, parameters, "~/Research/Data/Population Models/IntegratedPopModel/IPM_Bayfield.txt",
+             n.iter = ni, n.burnin = nb, n.chains = nc,
+             n.thin = nt, n.adapt = na, parallel = T, set.seed(1))
+
+endTime <- Sys.time(); endTime - startTime
+
+# After the model runs, check the trace plots to confirm convergence
+# The model I have now has pretty good convergence, but the vs2 is
+# a little bad
+# All Rhat values need to be less than 1.1
+
+# traceplot(out2)
+
+# Print the output of the model
+ print(out2, 3)
+
+#save model output
+# saveRDS(out2, file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_R.rds")
+```
+
+# Recapture rate
+```{r}
+# RBG
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_RBG.rds")
+
+## Fix m-array
+jags.data$marr[7,8] <- 1
+jags.data$marr[7,9] <- 0
+jags.data$marr[7,11] <- 1
+jags.data$marr[7,12] <- 0
+jags.data$marr[10,11] <- 2
+jags.data$marr[10,12] <- 0
+
+sum(jags.data$marr[,1:15])
+sum(jags.data$marr[,16])
+
+306/(306 + 174) * 100
+
+# Ilderton
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Ilderton.rds")
+
+## Fix m-array
+jags.data$marr[7,8] <- 2
+jags.data$marr[7,9] <- 0
+jags.data$marr[13,14] <- 2
+jags.data$marr[13,15] <- 0
+
+sum(jags.data$marr[,1:15])
+sum(jags.data$marr[,16])
+
+399/(399 + 129) * 100
+
+```

@@ -1,0 +1,3110 @@
+---
+title: "Wood-Poppy Integral Projection Model"
+author: "Amy E. Wiedenfeld"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+---
+
+Integral Projection Model for the wood-poppy
+
+Code from:
+https://cmerow.github.io/RDataScience/21_Intro_IPMs.html
+https://github.com/jloesberg/Primula/blob/main/scripts/primula_IPM.rmd
+
+-along with other papers, mentioned below
+
+# Load Data and Packages
+```{r message=FALSE, warning=FALSE}
+#libraries
+library(tidyverse)
+library(lubridate)
+library(stringr)
+library(nlme)
+library(popbio)
+library(cowplot)
+library(gridExtra)
+library(popdemo)
+library(ggpubr)
+library(arm)
+library(car)
+library(fields)
+
+#Data
+
+# Formatted for the IPM
+SurvData <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/SurvData_IProjM.csv")
+```
+
+
+Add data on average number of seeds by population
+```{r}
+#Average seed count by population (from Emma Neigel's 2022 data)
+Bayfield_seeds <- 38.6
+Fanshawe_seeds <- 87.5
+Ilderton_seeds <- 37.0
+Meadowlily_seeds <- 21.3
+
+#no data on RBG, and no seeds collected at Denfield
+#For these two locations, I will average the four sets
+# of seed averages that I have
+Denfield_seeds <- mean(Bayfield_seeds, Fanshawe_seeds,
+                       Ilderton_seeds, Meadowlily_seeds)
+RBG_seeds <- mean(Bayfield_seeds, Fanshawe_seeds,
+                  Ilderton_seeds, Meadowlily_seeds)
+```
+
+# Model Form
+
+The first step in constructing the IPM is to construct a life-cycle
+ diagram for the species, and then, based on that, construct
+ the model equation. The model equation (or equations) determine
+ what vital rate regressions and probabilities to calculate, and
+ will later determine the form of the model.
+ 
+ These are the equations (not written clearly--need special
+  characters to do this right) for the wood-poppy.
+
+**Number of 2-year old seeds**
+
+S2(t+1) = (1 - probability of germination[S1] - probability of 
+ germination[s2]) * S1
+ 
+$S_{2} = (1 - g_{0})S_{1}(t)$
+
+**Number of 1-year old seeds**
+
+S1(t+1) = (1 - probability of germination) * integral(probability
+ of flowering * number of seeds per plant)
+ 
+$S_{1}(t + 1) = (1 - g_{0})\int\limits_L^U p_{f}(x)f_{s}(x)n(x, t)dx$
+
+**Number of seedlings**
+
+C(t+1) = (seed germination) * integral(probability of flowering *
+ number of seeds per plant) + probability of germination * S1 +
+ probability of germination * S2
+ 
+$C(t+1) = p_{est}[g_{0}]\int\limits_L^U p_{f}(x)f_{s}(x)n(x, t)dx + g_{1}S_{1}(t) + g_{1}S_{2}(t)$
+
+ 
+**Number of Established Plants (not seedlings)**
+ 
+ n(y, t+1) =  C(t) * probability of establishment * distribution
+  of recruit sizes + integral ( probability of survival * 
+  probability of growth * number of individuals at time t)
+  
+$n(y, t+1) = C(t)p_{sc}f{sd}(y) + \int\limits_L^U p_{s}(x)g(y, x)n(x, t) dx$ 
+  
+## Vital Rate Regressions
+
+The next step in the model is to determine which vital rate regressions
+ and probabilities will need to be calculated, based on the model
+ equation.
+
+Probabilities
+Probability of germination
+
+Regressions
+Probability of flowering
+Probability of survival
+probability of establishment
+distribution of recruit sizes
+probability of survival
+probability of growth
+
+
+Code info from: Merow et al. 2014, Rees et al. 2014
+
+
+Models are confirmed as meeting assumptions in the IProj_M_regressions
+ R script. Each regression that is selected via an anova is from the
+ IProj_M_regressions R script. For models where multiple slopes and
+ intercepts are used, these are also extracted just below the model.
+
+
+```{r Format and Organize Data}
+######### Modify Dataframes ################################
+
+# Remove Ilderton 334 - these data are wrong
+SurvData <- SurvData %>%
+  filter(Individual != "334")
+
+#Add columns defining established plants (not seedlings), seedlings,
+# and last year's seedlings
+Estab_Plants <- SurvData %>%
+  #seedling to adult is discrete transition
+  filter(Recruit_t == 0) %>%
+  #I don't want seedlings in this dataset
+  filter(Recruit_t1 == 0)
+
+#For this, I only want seedlings that germinate in t+1
+Recruits <- SurvData %>%
+  filter(Recruit_t == 0) %>%
+  filter(Recruit_t1 == 1)
+
+# I want Year to be numeric, but just as 1,2, etc.
+# Year "1" is 2022
+Estab_Plants$Year_t <- as.factor(Estab_Plants$Year_t)
+Estab_Plants$Year_t <- as.numeric(Estab_Plants$Year_t)
+# Make sure that Population is also a factor
+Estab_Plants$Population <- as.factor(Estab_Plants$Population)
+
+#For the seeds per plant
+#This makes it so that it's only plants that have at least one seed
+Estab_Plants2 <- Estab_Plants %>%
+  filter(!is.na(Height_cm_t)) %>%
+  filter(!is.na(Seed_Number_t1)) %>%
+  filter(Seed_Number_t1 != 0)
+
+# For the GLM, I need the log of seed numbers for the model to work
+# well. I'll convert it back in the functions later
+Estab_Plants2$Seed_Number_t_x <- log(Estab_Plants2$Seed_Number_t)
+Estab_Plants2$Seed_Number_t1_x <- log(Estab_Plants2$Seed_Number_t1)
+
+#For Flowering probability
+#make flowering binary
+Estab_Plants <- Estab_Plants %>%
+  mutate(Flowering = case_when(Flower_Number_t1 > 0 ~ 1,
+                               Flower_Number_t1 == 0 ~ 0,
+                               TRUE ~ 0))
+ 
+# Split by population
+# Because I can't figure out the 3-way interaction to have models of
+# Population x Year x Size, I'm splitting everything up by population
+ BEstab_Plants <- Estab_Plants %>%
+  filter(Population == "Bayfield")
+FEstab_Plants <- Estab_Plants %>%
+  filter(Population == "Fanshawe")
+IEstab_Plants <- Estab_Plants %>%
+  filter(Population == "Ilderton")
+REstab_Plants <- Estab_Plants %>%
+  filter(Population == "RBG")
+
+BEstab_Plants2 <- Estab_Plants2 %>%
+  filter(Population == "Bayfield")
+FEstab_Plants2 <- Estab_Plants2 %>%
+  filter(Population == "Fanshawe")
+IEstab_Plants2 <- Estab_Plants2 %>%
+  filter(Population == "Ilderton")
+REstab_Plants2 <- Estab_Plants2 %>%
+  filter(Population == "RBG")
+```
+
+Vital Rate Regressions and Probabilities
+
+The code for these is mostly based on:
+https://github.com/jloesberg/Primula/blob/main/scripts/primula_IPM.rmd
+
+and also on Kuss et al. 2008 and Lemmer et al. 2021
+
+
+Then run the regressions and set up parameters
+```{r Regressions}
+# Set bootstrap sample number
+boot <- 1000
+
+######## Probability of Germination ########################
+
+#These numbers are from Emma Neigel's translocation experiment.
+
+#Year 1 (one year after seeds fall--fresh seeds)
+Prob_Germ_1 <- 105/2025 #about 5%
+
+#Year 2 (two years after seeds fall--one year in seed bank)
+Prob_Germ_2 <- 3/847 # 0.35%
+
+# Seed viability (after first year)
+Prob_Surv_Seed <- 58/803
+
+######### Probability of Establishment #####################
+#Seedling to Adult
+est.intercepts <- sum(SurvData$Survival_t1[SurvData$Recruit_t == 1], na.rm = T)/sum(SurvData$Recruit_t, na.rm = T)
+
+######### Distribution of Recruit Sizes ####################
+
+#size (mean and sd) of recruits in year t_1 if they are a seedling that year
+Recr_mean <- sapply(split(SurvData$Height_cm_t1[SurvData$Recruit_t1 == 1],
+                          SurvData$Population[SurvData$Recruit_t1 == 1]), mean, na.rm = T) 
+Recr_sd <- sapply(split(SurvData$Height_cm_t1[SurvData$Recruit_t1 == 1],
+                        SurvData$Population[SurvData$Recruit_t1 == 1]), sd, na.rm = T) 
+
+Recr_mean <- as.data.frame(Recr_mean)
+Recr_mean$Population <- c(1:4)
+
+Recr_sd <- as.data.frame(Recr_sd)
+Recr_sd$Population <- c(1:4)
+
+######### Adult Survival ###################################
+# No significant interactions
+
+# Run model
+Surv_Model <- glm(Survival_t1 ~ Height_cm_t,
+                  family = binomial(link = "logit"),
+                  data = BEstab_Plants)
+# Then get bootstrapped coefficients
+set.seed(1)
+Bs.samp <- MASS::mvrnorm(n = boot, mu = coef(Surv_Model), Sigma = vcov(Surv_Model))
+# And also get model coefficients for deterministic model--later on
+Bs.intercept <- Surv_Model$coefficients[1]
+Bs.slope1 <- Surv_Model$coefficients[2]
+
+# For Bayfield, the model doesn't converge, so I will not bootstrap survival
+Bs.samp <- cbind(rep(Bs.intercept, 1000), rep(Bs.slope1, 1000))
+
+Surv_Model <- glm(Survival_t1 ~ Height_cm_t,
+                  family = binomial(link = "logit"),
+                  data = FEstab_Plants)
+set.seed(1)
+Fs.samp <- MASS::mvrnorm(n = boot, mu = coef(Surv_Model), Sigma = vcov(Surv_Model))
+Fs.intercept <- Surv_Model$coefficients[1]
+Fs.slope1 <- Surv_Model$coefficients[2]
+
+Surv_Model <- glm(Survival_t1 ~ Height_cm_t,
+                  family = binomial(link = "logit"),
+                  data = IEstab_Plants)
+set.seed(1)
+Is.samp <- MASS::mvrnorm(n = boot, mu = coef(Surv_Model), Sigma = vcov(Surv_Model))
+Is.intercept <- Surv_Model$coefficients[1]
+Is.slope1 <- Surv_Model$coefficients[2]
+
+Surv_Model <- glm(Survival_t1 ~ Height_cm_t,
+                  family = binomial(link = "logit"),
+                  data = REstab_Plants)
+set.seed(1)
+Rs.samp <- MASS::mvrnorm(n = boot, mu = coef(Surv_Model), Sigma = vcov(Surv_Model))
+Rs.intercept <- Surv_Model$coefficients[1]
+Rs.slope1 <- Surv_Model$coefficients[2]
+
+######### Adult Growth #####################################
+
+Growth_Model <- lm(Height_cm_t1 ~ Year_t * Height_cm_t,
+              data = BEstab_Plants)
+set.seed(1)
+Bg.samp <- MASS::mvrnorm(n = boot, mu = coef(Growth_Model), Sigma = vcov(Growth_Model))
+Bg.intercept <- Growth_Model$coefficients[1]
+Bg.slope1 <- Growth_Model$coefficients[2]
+Bg.slope2 <- Growth_Model$coefficients[3]
+Bg.slope3 <- Growth_Model$coefficients[4]
+# variance
+Bgrowth_var <- sd(resid(Growth_Model))
+
+Growth_Model <- lm(Height_cm_t1 ~ Year_t * Height_cm_t,
+              data = FEstab_Plants)
+set.seed(1)
+Fg.samp <- MASS::mvrnorm(n = boot, mu = coef(Growth_Model), Sigma = vcov(Growth_Model))
+Fg.intercept <- Growth_Model$coefficients[1]
+Fg.slope1 <- Growth_Model$coefficients[2]
+Fg.slope2 <- Growth_Model$coefficients[3]
+Fg.slope3 <- Growth_Model$coefficients[4]
+# variance
+Fgrowth_var <- sd(resid(Growth_Model))
+
+Growth_Model <- lm(Height_cm_t1 ~ Year_t * Height_cm_t,
+              data = IEstab_Plants)
+set.seed(1)
+Ig.samp <- MASS::mvrnorm(n = boot, mu = coef(Growth_Model), Sigma = vcov(Growth_Model))
+Ig.intercept <- Growth_Model$coefficients[1]
+Ig.slope1 <- Growth_Model$coefficients[2]
+Ig.slope2 <- Growth_Model$coefficients[3]
+Ig.slope3 <- Growth_Model$coefficients[4]
+# variance
+Igrowth_var <- sd(resid(Growth_Model))
+
+Growth_Model <- lm(Height_cm_t1 ~ Year_t * Height_cm_t,
+              data = REstab_Plants)
+set.seed(1)
+Rg.samp <- MASS::mvrnorm(n = boot, mu = coef(Growth_Model), Sigma = vcov(Growth_Model))
+Rg.intercept <- Growth_Model$coefficients[1]
+Rg.slope1 <- Growth_Model$coefficients[2]
+Rg.slope2 <- Growth_Model$coefficients[3]
+Rg.slope3 <- Growth_Model$coefficients[4]
+# variance
+Rgrowth_var <- sd(resid(Growth_Model))
+
+########## Probability of Flowering ########################
+
+#The variable "Flowering" is for time t+1
+Flower_Model <- glm(Flowering ~ Year_t * Height_cm_t,
+              family = binomial(link = "logit"),
+              data = BEstab_Plants)
+set.seed(1)
+Bf.samp <- MASS::mvrnorm(n = boot, mu = coef(Flower_Model), Sigma = vcov(Flower_Model))
+Bf.intercept <- Flower_Model$coefficients[1]
+Bf.slope1 <- Flower_Model$coefficients[2]
+Bf.slope2 <- Flower_Model$coefficients[3]
+Bf.slope3 <- Flower_Model$coefficients[4]
+
+Flower_Model <- glm(Flowering ~ Year_t * Height_cm_t,
+              family = binomial(link = "logit"),
+              data = FEstab_Plants)
+set.seed(1)
+Ff.samp <- MASS::mvrnorm(n = boot, mu = coef(Flower_Model), Sigma = vcov(Flower_Model))
+Ff.intercept <- Flower_Model$coefficients[1]
+Ff.slope1 <- Flower_Model$coefficients[2]
+Ff.slope2 <- Flower_Model$coefficients[3]
+Ff.slope3 <- Flower_Model$coefficients[4]
+
+Flower_Model <- glm(Flowering ~ Year_t * Height_cm_t,
+              family = binomial(link = "logit"),
+              data = IEstab_Plants)
+set.seed(1)
+If.samp <- MASS::mvrnorm(n = boot, mu = coef(Flower_Model), Sigma = vcov(Flower_Model))
+If.intercept <- Flower_Model$coefficients[1]
+If.slope1 <- Flower_Model$coefficients[2]
+If.slope2 <- Flower_Model$coefficients[3]
+If.slope3 <- Flower_Model$coefficients[4]
+
+Flower_Model <- glm(Flowering ~ Year_t * Height_cm_t,
+              family = binomial(link = "logit"),
+              data = REstab_Plants)
+set.seed(1)
+Rf.samp <- MASS::mvrnorm(n = boot, mu = coef(Flower_Model), Sigma = vcov(Flower_Model))
+Rf.intercept <- Flower_Model$coefficients[1]
+Rf.slope1 <- Flower_Model$coefficients[2]
+Rf.slope2 <- Flower_Model$coefficients[3]
+Rf.slope3 <- Flower_Model$coefficients[4]
+
+######### Seeds Per Plant ##################################
+
+#t1_x is the log of seed number in t1
+
+Seed_Model <- glm(Seed_Number_t1_x ~ Year_t * Height_cm_t,
+                  data = BEstab_Plants2)
+set.seed(1)
+Bse.samp <- MASS::mvrnorm(n = boot, mu = coef(Seed_Model), Sigma = vcov(Seed_Model))
+Bse.intercept <- Seed_Model$coefficients[1]
+Bse.slope1 <- Seed_Model$coefficients[2]
+Bse.slope2 <- Seed_Model$coefficients[3]
+Bse.slope3 <- Seed_Model$coefficients[4]
+
+Seed_Model <- glm(Seed_Number_t1_x ~ Year_t * Height_cm_t,
+                  data = FEstab_Plants2)
+set.seed(1)
+Fse.samp <- MASS::mvrnorm(n = boot, mu = coef(Seed_Model), Sigma = vcov(Seed_Model))
+Fse.intercept <- Seed_Model$coefficients[1]
+Fse.slope1 <- Seed_Model$coefficients[2]
+Fse.slope2 <- Seed_Model$coefficients[3]
+Fse.slope3 <- Seed_Model$coefficients[4]
+
+Seed_Model <- glm(Seed_Number_t1_x ~ Year_t * Height_cm_t,
+                  data = IEstab_Plants2)
+set.seed(1)
+Ise.samp <- MASS::mvrnorm(n = boot, mu = coef(Seed_Model), Sigma = vcov(Seed_Model))
+Ise.intercept <- Seed_Model$coefficients[1]
+Ise.slope1 <- Seed_Model$coefficients[2]
+Ise.slope2 <- Seed_Model$coefficients[3]
+Ise.slope3 <- Seed_Model$coefficients[4]
+
+Seed_Model <- glm(Seed_Number_t1_x ~ Year_t * Height_cm_t,
+                  data = REstab_Plants2)
+set.seed(1)
+Rse.samp <- MASS::mvrnorm(n = boot, mu = coef(Seed_Model), Sigma = vcov(Seed_Model))
+Rse.intercept <- Seed_Model$coefficients[1]
+Rse.slope1 <- Seed_Model$coefficients[2]
+Rse.slope2 <- Seed_Model$coefficients[3]
+Rse.slope3 <- Seed_Model$coefficients[4]
+```
+
+Extract coefficients for table
+```{r}
+# Re-run models above with separate names
+## I have to re-run these so I don't mess up anything with the bootstrap
+## below, So these models are ONLY for making a table of coefficients
+
+Surv_ModelB <- glm(Survival_t1 ~ Height_cm_t,
+                  family = binomial(link = "logit"),
+                  data = BEstab_Plants)
+Surv_ModelF <- glm(Survival_t1 ~ Height_cm_t,
+                  family = binomial(link = "logit"),
+                  data = FEstab_Plants)
+Surv_ModelI <- glm(Survival_t1 ~ Height_cm_t,
+                  family = binomial(link = "logit"),
+                  data = IEstab_Plants)
+Surv_ModelR <- glm(Survival_t1 ~ Height_cm_t,
+                  family = binomial(link = "logit"),
+                  data = REstab_Plants)
+
+Grow_ModelB <- glm(Height_cm_t1 ~ Year_t * Height_cm_t,
+              data = BEstab_Plants)
+Grow_ModelF <- glm(Height_cm_t1 ~ Year_t * Height_cm_t,
+              data = FEstab_Plants)
+Grow_ModelI <- glm(Height_cm_t1 ~ Year_t * Height_cm_t,
+              data = IEstab_Plants)
+Grow_ModelR <- glm(Height_cm_t1 ~ Year_t * Height_cm_t,
+              data = REstab_Plants)
+
+Flower_ModelB <- glm(Flowering ~ Year_t * Height_cm_t,
+              family = binomial(link = "logit"),
+              data = BEstab_Plants)
+Flower_ModelF <- glm(Flowering ~ Year_t * Height_cm_t,
+              family = binomial(link = "logit"),
+              data = FEstab_Plants)
+Flower_ModelI <- glm(Flowering ~ Year_t * Height_cm_t,
+              family = binomial(link = "logit"),
+              data = IEstab_Plants)
+
+Flower_ModelR <- glm(Flowering ~ Year_t * Height_cm_t,
+              family = binomial(link = "logit"),
+              data = REstab_Plants)
+
+Seed_ModelB <- glm(Seed_Number_t1_x ~ Year_t * Height_cm_t,
+                  data = BEstab_Plants2)
+Seed_ModelF <- glm(Seed_Number_t1_x ~ Year_t * Height_cm_t,
+                  data = FEstab_Plants2)
+Seed_ModelI <- glm(Seed_Number_t1_x ~ Year_t * Height_cm_t,
+                  data = IEstab_Plants2)
+Seed_ModelR <- glm(Seed_Number_t1_x ~ Year_t * Height_cm_t,
+                  data = REstab_Plants2)
+
+### Gather coefficients
+
+Coefs <- c(coef(Surv_ModelB), coef(Surv_ModelF), coef(Surv_ModelI), coef(Surv_ModelR),
+           coef(Grow_ModelB), coef(Grow_ModelF),  coef(Grow_ModelI),  coef(Grow_ModelR),
+           coef(Flower_ModelB), coef(Flower_ModelF), coef(Flower_ModelI), coef(Flower_ModelR),
+           coef(Seed_ModelB), coef(Seed_ModelF), coef(Seed_ModelI), coef(Seed_ModelR))
+SECoefs <- c(se.coef(Surv_ModelB), se.coef(Surv_ModelF), se.coef(Surv_ModelI), se.coef(Surv_ModelR),
+           se.coef(Grow_ModelB), se.coef(Grow_ModelF),  se.coef(Grow_ModelI),  se.coef(Grow_ModelR),
+           se.coef(Flower_ModelB), se.coef(Flower_ModelF), se.coef(Flower_ModelI), se.coef(Flower_ModelR),
+           se.coef(Seed_ModelB), se.coef(Seed_ModelF), se.coef(Seed_ModelI), se.coef(Seed_ModelR))
+
+DF <- c(NA, Anova(Surv_ModelB)$Df, NA, Anova(Surv_ModelF)$Df,NA, Anova(Surv_ModelI)$Df,NA, Anova(Surv_ModelR)$Df,
+        NA, Anova(Grow_ModelB)$Df, NA, Anova(Grow_ModelF)$Df, NA, Anova(Grow_ModelI)$Df, NA, Anova(Grow_ModelR)$Df,
+        NA, Anova(Flower_ModelB)$Df, NA, Anova(Flower_ModelF)$Df, NA, Anova(Flower_ModelI)$Df, NA, Anova(Flower_ModelR)$Df,
+        NA, Anova(Seed_ModelB)$Df, NA, Anova(Seed_ModelF)$Df, NA, Anova(Seed_ModelI)$Df, NA, Anova(Seed_ModelR)$Df)
+
+# Need to re-run if change order of things in GLMs above!!!
+AICModel <- c(drop1(Surv_ModelB)$AIC, drop1(Surv_ModelF)$AIC, drop1(Surv_ModelI)$AIC, drop1(Surv_ModelR)$AIC,
+              NA, NA, drop1(Grow_ModelB)$AIC, NA, NA, drop1(Grow_ModelF)$AIC, NA, NA, drop1(Grow_ModelI)$AIC, NA, NA, drop1(Grow_ModelR)$AIC,
+              NA, NA, drop1(Flower_ModelB)$AIC, NA, NA, drop1(Flower_ModelF)$AIC, NA, NA, drop1(Flower_ModelI)$AIC, NA, NA, drop1(Flower_ModelR)$AIC,
+              NA, NA, drop1(Seed_ModelB)$AIC, NA, NA, drop1(Seed_ModelF)$AIC, NA, NA, drop1(Seed_ModelI)$AIC, NA, NA, drop1(Seed_ModelR)$AIC)
+
+LRT <- c(NA, Anova(Surv_ModelB)$`LR Chisq`,NA, Anova(Surv_ModelF)$`LR Chisq`, NA, Anova(Surv_ModelI)$`LR Chisq`, NA, Anova(Surv_ModelR)$`LR Chisq`,
+         NA, Anova(Grow_ModelB)$`LR Chisq`, NA, Anova(Grow_ModelF)$`LR Chisq`, NA, Anova(Grow_ModelI)$`LR Chisq`, NA, Anova(Grow_ModelR)$`LR Chisq`,
+         NA, Anova(Flower_ModelB)$`LR Chisq`, NA, Anova(Flower_ModelF)$`LR Chisq`, NA, Anova(Flower_ModelI)$`LR Chisq`, NA, Anova(Flower_ModelR)$`LR Chisq`,
+         NA, Anova(Seed_ModelB)$`LR Chisq`, NA, Anova(Seed_ModelF)$`LR Chisq`, NA, Anova(Seed_ModelI)$`LR Chisq`, NA, Anova(Seed_ModelR)$`LR Chisq`)
+
+PValues <- c(NA, Anova(Surv_ModelB)$`Pr(>Chisq)`,NA, Anova(Surv_ModelF)$`Pr(>Chisq)`, NA, Anova(Surv_ModelI)$`Pr(>Chisq)`, NA, Anova(Surv_ModelR)$`Pr(>Chisq)`,
+             NA, Anova(Grow_ModelB)$`Pr(>Chisq)`, NA, Anova(Grow_ModelF)$`Pr(>Chisq)`, NA, Anova(Grow_ModelI)$`Pr(>Chisq)`, NA, Anova(Grow_ModelR)$`Pr(>Chisq)`,
+             NA, Anova(Flower_ModelB)$`Pr(>Chisq)`, NA, Anova(Flower_ModelF)$`Pr(>Chisq)`, NA, Anova(Flower_ModelI)$`Pr(>Chisq)`, NA, Anova(Flower_ModelR)$`Pr(>Chisq)`,
+             NA, Anova(Seed_ModelB)$`Pr(>Chisq)`, NA, Anova(Seed_ModelF)$`Pr(>Chisq)`, NA, Anova(Seed_ModelI)$`Pr(>Chisq)`, NA, Anova(Seed_ModelR)$`Pr(>Chisq)`)
+
+AllCoefs <- as.data.frame(cbind(Coefs, SECoefs, DF, AICModel, LRT, PValues))
+names(AllCoefs) <- c("Coefficient", "SE", "df", "AIC", "Test_Statistic", "P_value")
+AllCoefs$Predictor <- rownames(AllCoefs)
+AllCoefs <- AllCoefs %>%
+  dplyr::select(Predictor, Coefficient, SE, df, AIC, Test_Statistic, P_value) %>%
+  mutate(Predictor = case_when(grepl("Intercept", Predictor) ~ "Intercept",
+                               grepl("Year_t.Height", Predictor) ~ "Height Year t * Year t",
+                               grepl("Year_t.", Predictor) ~ "Year t",
+                               Predictor == "Year_t" ~ "Year_t",
+                               TRUE ~ "Height Year t")) %>%
+  mutate(across(c("Coefficient", "SE", "AIC", "Test_Statistic"), round, 2)) %>%
+  mutate(across(c("P_value"), round, 3)) %>%
+  add_row(Predictor = "Survival Model", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 1) %>%
+  add_row(Predictor = "Bayfield", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 2) %>%
+  add_row(Predictor = "Fanshawe", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 5) %>%
+  add_row(Predictor = "Ilderton", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 8) %>%
+  add_row(Predictor = "RBG", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 11) %>%
+  
+  add_row(Predictor = "Growth Model", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 14) %>%
+  add_row(Predictor = "Bayfield", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 15) %>%
+  add_row(Predictor = "Fanshawe", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 20) %>%
+  add_row(Predictor = "Ilderton", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 25) %>%
+  add_row(Predictor = "RBG", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 30) %>%
+  
+  add_row(Predictor = "Flowering Model", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 35) %>%
+  add_row(Predictor = "Bayfield", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 36) %>%
+  add_row(Predictor = "Fanshawe", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 41) %>%
+  add_row(Predictor = "Ilderton", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 46) %>%
+  add_row(Predictor = "RBG", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 51) %>%
+  
+  add_row(Predictor = "Seed Model", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 56) %>%
+  add_row(Predictor = "Bayfield", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 57) %>%
+  add_row(Predictor = "Fanshawe", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 62) %>%
+  add_row(Predictor = "Ilderton", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 67) %>%
+  add_row(Predictor = "RBG", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 72)
+# write.csv(AllCoefs, "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/PopCoefs.csv", row.names = F)
+```
+
+# Graphs of Vital Rates
+
+Plot vital rates (probability of survival, growth, probability of
+ flowering, and seeds per plant)
+```{r echo=FALSE}
+#Make a vector of population names
+Population <- c("Bayfield", "Fanshawe", "Ilderton", "RBG")
+PopCol <- c("#E69F00", "#56B4E9", "#009E73","#0072B2")
+pch_names <- c(1:4)
+
+## Growth
+p1 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Height_cm_t1,
+                         col = Population, linetype = Population)) +
+  geom_point(alpha = 0.5) +
+  labs (x = "Height in year t (cm)", y = "Height in year t + 1 (cm)") +
+  scale_color_manual(values = PopCol) +
+  stat_smooth(method = "lm", formula = y ~ x, size = 1, se = T, fill = NA) +
+    scale_linetype_manual(values = c("Bayfield" = 1, "Fanshawe" = 1, "Ilderton" = 1, "RBG" = 1)) +
+  xlim(0, 90) +
+  theme_classic() +
+  theme(legend.position="none") +
+    theme(axis.title.x = element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  # Fix font sizes
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+## Flowering
+
+#divide by population
+Bayfield <- Estab_Plants %>%
+  filter(Population == "Bayfield")
+Fanshawe <- Estab_Plants %>%
+  filter(Population == "Fanshawe")
+Ilderton <- Estab_Plants %>%
+  filter(Population == "Ilderton")
+RBG <- Estab_Plants %>%
+  filter(Population == "RBG")
+
+#create dataframe of points along regression for ggplot
+fitB = glm(Flowering ~ Height_cm_t, data = Bayfield, family=binomial)
+newdatB <- data.frame(Height_cm_t =seq(min(Estab_Plants$Height_cm_t, na.rm = T)*0.9,
+                                       max(Estab_Plants$Height_cm_t, na.rm = T)*1.1,len=1000))
+newdatB$Flowering = predict(fitB, newdata=newdatB, type="response")
+
+fitF = glm(Flowering ~ Height_cm_t, data = Fanshawe, family=binomial)
+newdatF <- data.frame(Height_cm_t =seq(min(Estab_Plants$Height_cm_t, na.rm = T)*0.9,
+                                       max(Estab_Plants$Height_cm_t, na.rm = T)*1.1,len=1000))
+newdatF$Flowering = predict(fitF, newdata=newdatF, type="response")
+
+fitI = glm(Flowering ~ Height_cm_t, data = Ilderton, family=binomial)
+newdatI <- data.frame(Height_cm_t =seq(min(Estab_Plants$Height_cm_t, na.rm = T)*0.9,
+                                       max(Estab_Plants$Height_cm_t, na.rm = T)*1.1,len=1000))
+newdatI$Flowering = predict(fitI, newdata=newdatI, type="response")
+
+fitR = glm(Flowering ~ Height_cm_t, data = RBG, family=binomial)
+newdatR <- data.frame(Height_cm_t =seq(min(Estab_Plants$Height_cm_t, na.rm = T)*0.9,
+                                       max(Estab_Plants$Height_cm_t, na.rm = T)*1.1,len=1000))
+newdatR$Flowering = predict(fitR, newdata=newdatR, type="response")
+
+#plot!
+p2 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Flowering, col = Population)) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = PopCol) +
+  geom_line(data = newdatB, aes(x = Height_cm_t, y = Flowering), col = "#E69F00", linetype = 1, linewidth = 1) +
+  geom_line(data = newdatF, aes(x = Height_cm_t, y = Flowering), col = "#56B4E9", linetype = 1, linewidth = 1) +
+  geom_line(data = newdatI, aes(x = Height_cm_t, y = Flowering), col = "#009E73", linetype = 1, linewidth = 1) +
+  geom_line(data = newdatR, aes(x = Height_cm_t, y = Flowering), col = "#0072B2", linetype = 1, linewidth = 1) +
+  labs(x = "Height in year t (cm)", y = "Probability of Flowering Year t+1") +
+  xlim(0, 90) +
+  theme_classic() + 
+  theme(legend.position="none") +
+  # Fix font sizes
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+# Survival
+
+#divide by population
+Bayfield <- Estab_Plants %>%
+  filter(Population == "Bayfield")
+Fanshawe <- Estab_Plants %>%
+  filter(Population == "Fanshawe")
+Ilderton <- Estab_Plants %>%
+  filter(Population == "Ilderton")
+RBG <- Estab_Plants %>%
+  filter(Population == "RBG")
+
+#create dataframe of points along regression for ggplot
+fitB = glm(Survival_t1 ~ Height_cm_t, data = Bayfield, family=binomial)
+newdatB <- data.frame(Height_cm_t =seq(min(Estab_Plants$Height_cm_t, na.rm = T)*0.9,
+                                       max(Estab_Plants$Height_cm_t, na.rm = T)*1.1,len=1000))
+newdatB$Survival_t1 = predict(fitB, newdata=newdatB, type="response")
+
+fitF = glm(Survival_t1 ~ Height_cm_t, data = Fanshawe, family=binomial)
+newdatF <- data.frame(Height_cm_t =seq(min(Estab_Plants$Height_cm_t, na.rm = T)*0.9,
+                                       max(Estab_Plants$Height_cm_t, na.rm = T)*1.1,len=1000))
+newdatF$Survival_t1 = predict(fitF, newdata=newdatF, type="response")
+
+fitI = glm(Survival_t1 ~ Height_cm_t, data = Ilderton, family=binomial)
+newdatI <- data.frame(Height_cm_t =seq(min(Estab_Plants$Height_cm_t, na.rm = T)*0.9,
+                                       max(Estab_Plants$Height_cm_t, na.rm = T)*1.1,len=1000))
+newdatI$Survival_t1 = predict(fitI, newdata=newdatI, type="response")
+
+fitR = glm(Survival_t1 ~ Height_cm_t, data = RBG, family=binomial)
+newdatR <- data.frame(Height_cm_t =seq(min(Estab_Plants$Height_cm_t, na.rm = T)*0.9,
+                                       max(Estab_Plants$Height_cm_t, na.rm = T)*1.1,len=1000))
+newdatR$Survival_t1 = predict(fitR, newdata=newdatR, type="response")
+
+#merge back
+newdatB$Population <- "Bayfield"
+newdatF$Population <- "Fanshawe"
+newdatI$Population <- "Ilderton"
+newdatR$Population <- "RBG"
+newdat <- as.data.frame(rbind(newdatB, newdatF, newdatI, newdatR))
+
+#plot!
+p4 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Survival_t1, col = Population)) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = PopCol, # labels used to change legend
+                     #labels=c("1", "3", "4", "6")
+                     labels = c("Bayfield", "Fanshawe", "Ilderton", "RBG")) +
+  geom_line(data = newdat, aes(x = Height_cm_t, y = Survival_t1, linetype = Population), linewidth = 1) +
+  labs(x = "Height in year t (cm)", y = "Probability of Survival Year t+1") +
+  scale_linetype_manual(values = c("Bayfield" = 1, "Fanshawe" = 1, "Ilderton" = 1, "RBG" = 1),
+                        #labels=c("1", "3", "4", "6")
+                        labels = c("Bayfield", "Fanshawe", "Ilderton", "RBG")) +
+  xlim(0, 90) +
+  theme_classic() + 
+  #theme(legend.position="none") +
+  #add legend for all the graphs
+  guides(colour = guide_legend(position = "inside")) +
+  theme(legend.position.inside = c(0.85, 0.5),
+        legend.background = element_rect(fill = "white", colour = "lightgray")) +
+  theme(legend.key.size = unit(1, 'cm'),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14))+
+  theme(axis.title.x = element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  # Fix font sizes
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+# Seeds
+
+p3 <- ggplot(Estab_Plants2, aes(x = Height_cm_t, y = log(Seed_Number_t1),
+                         col = Population, linetype = Population)) +
+  geom_point(alpha = 0.5) +
+  labs (x = "Height in year t (cm)", y = "log(Seeds per plant), Year t + 1") +
+  scale_color_manual(values = PopCol) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1, se = T, fill = NA) +
+  scale_linetype_manual(values = c("Bayfield" = 1, "Fanshawe" = 1, "Ilderton" = 1, "RBG" = 1)) +
+  xlim(0, 90) +
+  theme_classic() +
+  theme(legend.position="none") +
+  # Fix font sizes
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+Graphs <- ggarrange(p4, p1, p2, p3,
+                    labels = c("(a)", "(b)", "(c)", "(d)"),
+                    font.label = list(size = 12), 
+                    hjust = -0.2,
+                    ncol = 2, nrow = 2, align = "h")
+Graphs
+
+# ggsave(plot = Graphs, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+#        filename = "VitalRates_Pops.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = Graphs, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+#        filename = "VitalRates_Pops.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+```
+
+# Bootstrapped Model
+
+Once all the regressions have been run, combine the parameter estimates
+ from them (slopes and intercepts, and variation), along with the
+ probabilities of transition between stages.
+
+Bootstrap code is from https://github.com/jloesberg/Primula/blob/main/scripts/primula_IPM.rmd
+ 
+```{r Gather Parameters}
+# First need year and population numbers
+Year_t <- c(1,2,3)
+Population <- c(1,2,3,4)
+
+# Survival
+# Combine the populations
+s.samp <- rbind(Bs.samp, Fs.samp, Is.samp, Rs.samp)
+
+# For slopes 1 and 2, just need 1 column of data
+s.slope <- data.frame(s.slope = s.samp[, 2], Population = c(rep(1,1000), rep(2,1000),rep(3,1000),rep(4,1000)), boot.group = seq(1, boot, by = 1))
+
+# Make an empty dataframe and set the row indexing
+Bs.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Bs.int[row_index, "s.int"] <-  Bs.samp[j, 1]# + Bs.samp[j, 3] * Year_t[i]
+    Bs.int[row_index, "Year_t"] <- Year_t[i]
+    Bs.int[row_index, "Population"] <- 1
+    Bs.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+Fs.int <- data.frame()
+row_index <- 1
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Fs.int[row_index, "s.int"] <-  Fs.samp[j, 1]# + Fs.samp[j, 3] * Year_t[i]
+    Fs.int[row_index, "Year_t"] <- Year_t[i]
+    Fs.int[row_index, "Population"] <- 2
+    Fs.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+Is.int <- data.frame()
+row_index <- 1
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Is.int[row_index, "s.int"] <-  Is.samp[j, 1]# + Is.samp[j, 3] * Year_t[i]
+    Is.int[row_index, "Year_t"] <- Year_t[i]
+    Is.int[row_index, "Population"] <- 3
+    Is.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+Rs.int <- data.frame()
+row_index <- 1
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Rs.int[row_index, "s.int"] <-  Rs.samp[j, 1]# + Rs.samp[j, 3] * Year_t[i]
+    Rs.int[row_index, "Year_t"] <- Year_t[i]
+    Rs.int[row_index, "Population"] <- 4
+    Rs.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+s.int <- as.data.frame(rbind(Bs.int, Fs.int, Is.int, Rs.int))
+
+surv <-left_join(s.int, s.slope, by = c("Population", "boot.group"))
+# Growth
+
+# Combine the populations
+g.samp <- rbind(Bg.samp, Fg.samp, Ig.samp, Rg.samp)
+
+# For slopes 1 and 2, just need 1 column of data
+g.slope <- data.frame(g.slope = g.samp[, 3], Population = c(rep(1,1000), rep(2,1000),rep(3,1000),rep(4,1000)), boot.group = seq(1, boot, by = 1))
+g.slope2 <- data.frame(g.slope2 = g.samp[, 4], Population = c(rep(1,1000), rep(2,1000),rep(3,1000),rep(4,1000)), boot.group = seq(1, boot, by = 1))
+
+# Make an empty dataframe and set the row indexing
+Bg.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Bg.int[row_index, "g.int"] <-  Bg.samp[j, 1] + Bg.samp[j, 2] * Year_t[i]
+    Bg.int[row_index, "Year_t"] <- Year_t[i]
+    Bg.int[row_index, "Population"] <- 1
+    Bg.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+Fg.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Fg.int[row_index, "g.int"] <-  Fg.samp[j, 1] + Fg.samp[j, 2] * Year_t[i]
+    Fg.int[row_index, "Year_t"] <- Year_t[i]
+    Fg.int[row_index, "Population"] <- 2
+    Fg.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+    }
+  }
+
+Ig.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Ig.int[row_index, "g.int"] <-  Ig.samp[j, 1] + Ig.samp[j, 2] * Year_t[i]
+    Ig.int[row_index, "Year_t"] <- Year_t[i]
+    Ig.int[row_index, "Population"] <- 3
+    Ig.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+    }
+}
+
+Rg.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Rg.int[row_index, "g.int"] <-  Rg.samp[j, 1] + Rg.samp[j, 2] * Year_t[i]
+    Rg.int[row_index, "Year_t"] <- Year_t[i]
+    Rg.int[row_index, "Population"] <- 4
+    Rg.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+g.int <- as.data.frame(rbind(Bg.int, Fg.int, Ig.int, Rg.int))
+
+# Combine the slopes and intercept
+grow <-left_join(g.int, g.slope, by = c("Population", "boot.group"))
+grow <-left_join(grow, g.slope2, by = c("Population", "boot.group"))
+
+# Growth Variance
+# For the growth parameter, need variation
+growth_var <- data.frame(Grow_sd = double(), Population = double())
+growth_var[1,1] <- Bgrowth_var
+growth_var[2,1] <- Fgrowth_var
+growth_var[3,1] <- Igrowth_var
+growth_var[4,1] <- Rgrowth_var
+growth_var[1,2] <- 1 # Bayfield
+growth_var[2,2] <- 2 # Fanshawe
+growth_var[3,2] <- 3 # Ilderton
+growth_var[4,2] <- 4 # RBG
+
+# Flowers
+f.samp <- rbind(Bf.samp, Ff.samp, If.samp, Rf.samp)
+
+f.slope <- data.frame(f.slope = f.samp[, 3], Population = c(rep(1,1000), rep(2,1000),rep(3,1000),rep(4,1000)), boot.group = seq(1, boot, by = 1))
+f.slope2 <- data.frame(f.slope2 = f.samp[, 4], Population = c(rep(1,1000), rep(2,1000),rep(3,1000),rep(4,1000)), boot.group = seq(1, boot, by = 1))
+
+Bf.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Bf.int[row_index, "fl.int"] <-  Bf.samp[j, 1] + Bf.samp[j, 2] * Year_t[i]
+    Bf.int[row_index, "Year_t"] <- Year_t[i]
+    Bf.int[row_index, "Population"] <- 1
+    Bf.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+Ff.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Ff.int[row_index, "fl.int"] <-  Ff.samp[j, 1] + Ff.samp[j, 2] * Year_t[i]
+    Ff.int[row_index, "Year_t"] <- Year_t[i]
+    Ff.int[row_index, "Population"] <- 2
+    Ff.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+If.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    If.int[row_index, "fl.int"] <-  If.samp[j, 1] + If.samp[j, 2] * Year_t[i]
+    If.int[row_index, "Year_t"] <- Year_t[i]
+    If.int[row_index, "Population"] <- 3
+    If.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+Rf.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Rf.int[row_index, "fl.int"] <-  Rf.samp[j, 1] + Rf.samp[j, 2] * Year_t[i]
+    Rf.int[row_index, "Year_t"] <- Year_t[i]
+    Rf.int[row_index, "Population"] <- 4
+    Rf.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+f.int <- as.data.frame(rbind(Bf.int, Ff.int, If.int, Rf.int))
+
+fl<-left_join(f.int, f.slope, by = c("Population", "boot.group"))
+fl <-left_join(fl, f.slope2, by = c("Population", "boot.group"))
+
+# Seeds
+se.samp <- rbind(Bse.samp, Fse.samp, Ise.samp, Rse.samp)
+
+se.slope <- data.frame(se.slope = se.samp[, 3], Population = c(rep(1,1000), rep(2,1000),rep(3,1000),rep(4,1000)), boot.group = seq(1, boot, by = 1))
+se.slope2 <- data.frame(se.slope2 = se.samp[, 4], Population = c(rep(1,1000), rep(2,1000),rep(3,1000),rep(4,1000)), boot.group = seq(1, boot, by = 1))
+
+Bse.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Bse.int[row_index, "se.int"] <-  Bse.samp[j, 1] + Bse.samp[j, 2] * Year_t[i]
+    Bse.int[row_index, "Year_t"] <- Year_t[i]
+    Bse.int[row_index, "Population"] <- 1
+    Bse.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+Fse.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Fse.int[row_index, "se.int"] <-  Fse.samp[j, 1] + Fse.samp[j, 2] * Year_t[i]
+    Fse.int[row_index, "Year_t"] <- Year_t[i]
+    Fse.int[row_index, "Population"] <- 2
+    Fse.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+Ise.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Ise.int[row_index, "se.int"] <-  Ise.samp[j, 1] + Ise.samp[j, 2] * Year_t[i]
+    Ise.int[row_index, "Year_t"] <- Year_t[i]
+    Ise.int[row_index, "Population"] <- 3
+    Ise.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+Rse.int <- data.frame()
+row_index <- 1
+
+for (j in 1:boot) {
+  for (i in 1:length(Year_t)) {
+    Rse.int[row_index, "se.int"] <-  Rse.samp[j, 1] + Rse.samp[j, 2] * Year_t[i]
+    Rse.int[row_index, "Year_t"] <- Year_t[i]
+    Rse.int[row_index, "Population"] <- 4
+    Rse.int[row_index, "boot.group"] <- j
+    # move to the next row
+    row_index <- row_index + 1
+  }
+}
+
+se.int <- as.data.frame(rbind(Bse.int, Fse.int, Ise.int, Rse.int))
+
+se <-left_join(se.int, se.slope, by = c("Population", "boot.group"))
+se <-left_join(se, se.slope2, by = c("Population", "boot.group"))
+
+### Combine them all into one dataframe
+boot_params <- left_join(surv, grow)
+boot_params <- left_join(boot_params, fl, by = c("Year_t", "Population", "boot.group"))
+boot_params <- left_join(boot_params, se, by = c("Year_t", "Population", "boot.group"))
+
+### Add other things that aren't bootstrapped--these are considered to be the
+# same across all populations and years
+boot_params$Prob_Germ_1 <- Prob_Germ_1
+boot_params$Prob_Germ_2 <- Prob_Germ_2
+boot_params$Prob_Surv_Seed <- Prob_Surv_Seed
+boot_params$Estab <- est.intercepts
+boot_params$Recruit_size <- Recr_mean$Recr_mean[match(boot_params$Population, Recr_mean$Population)]
+boot_params$Recruit_sd <- Recr_sd$Recr_sd[match(boot_params$Population, Recr_sd$Population)]
+
+# Add the growth variation--this is considered to be the same across years
+#  but can be different between the populations
+boot_params$grow.sd <- growth_var$Grow_sd[match(boot_params$Population, growth_var$Population)]
+
+# Make into a list, one element for each row
+params_list <-  filter(boot_params) %>%
+  split(., seq(nrow(.)))
+```
+
+## Functions
+
+This is from a mix of Merow et al. 2014, the Merow github page, Kuss et al.
+ 2008 and Lemmer et al. 2021
+ 
+Useful code pages:
+https://github.com/Martin19910130/Bromus_IPM_publication/blob/master/R_code/Bootstrap_lambda.R
+https://cmerow.github.io/RDataScience/21_Intro_IPMs.html#3_regressions_for_vital_rate_functions
+
+```{r Functions}
+########## Eviction ########################################
+# Avoid unintentional eviction
+# Code for this is from Lemmer et al. 2021
+#Basically: force anything bigger than the max.size to be 
+# the max.size, and anything smaller than the min.size to
+# be the min.size
+#Set minimum and maximum sizes
+min.size = 0.9 * min(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+max.size = 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+
+x_range <- function(Height_cm_t, boot_params) {
+  pmin(pmax(Height_cm_t, min.size), max.size)
+}
+
+######### Survival #########################################
+#Survival of established plants
+S_z <- function(Height_cm_t, Year_t, boot_params) {
+  xb <- x_range(Height_cm_t, boot_params)
+  linear_p <- boot_params$s.int + boot_params$s.slope * xb
+  p <- 1/(1 + exp(-linear_p))
+  return(p)
+}
+
+#Test this
+mean(S_z(12, 1, boot_params))
+mean(S_z(70, 2, boot_params))
+#Seems ok
+
+######### Growth ###########################################
+
+G_z1z <- function(Height_cm_t, Height_cm_t1, Year_t, boot_params) {
+  xb <- x_range(Height_cm_t, Params)
+  return(dnorm(Height_cm_t1,
+  mean <- boot_params$g.int + boot_params$g.slope * xb + boot_params$g.slope2 * Year_t * xb,
+  sd = boot_params$grow.sd))
+}
+
+mean(G_z1z(12, 15, 1, boot_params))
+mean(G_z1z(62, 70, 2, boot_params))
+# I think this is right
+
+######### Combine Survival and Growth ######################
+P_z <- function(Height_cm_t, Height_cm_t1, Year_t, boot_params){
+  xb <- x_range(Height_cm_t, boot_params)
+  return(S_z(xb, Year_t, boot_params) * G_z1z(xb, Height_cm_t1, Year_t, boot_params))
+}
+
+mean(P_z(12, 15, 1, boot_params))
+mean(P_z(54, 72, 2, boot_params))
+
+######### Probability of Flowering #########################
+
+Pf_z <- function(Height_cm_t, Year_t, boot_params) {
+  xb <- x_range(Height_cm_t, boot_params)
+  u <- boot_params$fl.int + boot_params$f.slope * xb + boot_params$f.slope2 * Year_t * xb
+  p <- 1/(1 + exp(-u))
+  return(p)
+}
+
+mean(Pf_z(12, 1, boot_params))
+mean(Pf_z(72, 2, boot_params))
+# Yup
+
+######### Seeds Per Plant ##################################
+
+Sf_z <- function(Height_cm_t, Year_t, boot_params){
+  nseed <- boot_params$se.int + boot_params$se.slope * Height_cm_t + boot_params$se.slope2 * Year_t * Height_cm_t
+  return(exp(nseed))
+}
+
+# Test this
+mean(Sf_z(12, 1, boot_params))
+mean(Sf_z(72, 2, boot_params))
+# Yup!!
+
+######### Flowering Probability and Seed Number ############
+
+F_z <- function(Height_cm_t, Year_t, boot_params) {
+  xb <- x_range(Height_cm_t, boot_params) # from Lemmer et al. 2021
+  x <- Pf_z(xb, Year_t, boot_params) * Sf_z(xb, Year_t, boot_params)
+  return(x)
+}
+
+# Test this
+mean(F_z(12, 1, boot_params))
+mean(F_z(72, 2, boot_params))
+
+########## Seedling Sizes ##################################
+Se_z <- function(Height_cm_t1, boot_params){
+  dnorm(x = Height_cm_t1,
+        mean = boot_params$Recruit_size,
+        sd = boot_params$Recruit_sd)
+}
+
+#Test this
+mean(Se_z(5, boot_params))
+mean(Se_z(10, boot_params))
+# Yeah
+
+########## Seedling Survival ###############################
+Sur_z1 <- function(boot_params){
+  surv_adults <- boot_params$Estab
+  return(surv_adults)
+}
+
+#Test this
+mean(Sur_z1(boot_params))
+#yep
+
+########## Seed bank #######################################
+S1_z <- function(Height_cm_t, Year_t, boot_params){
+  f <- F_z(Height_cm_t, Year_t, boot_params) * (1 - boot_params$Prob_Germ_1)
+  return(f);
+}
+
+#Test this
+mean(S1_z(12, 1, boot_params))
+mean(S1_z(72, 2, boot_params))
+#looks pretty good
+```
+
+## Kernel
+
+This is building the matrix for analysis. The fertility matrix and the
+ transition matrix each fill specific cells of the "big matrix." The
+ matrix has 100 rows and columns for the continuous stage, and then one
+ row and column each for the discrete stages.
+ The matrix is built as a function so that each population can be
+  analysed separately in the next step.
+ 
+ Big Matrix
+ 
+ Rows are year t + 1
+ Columns are year t
+ 
+Based on code from Jenna Loesberg
+https://github.com/jloesberg/Primula/blob/main/scripts/primula_IPM.rmd
+
+One issue here: what does the transpose of the outer() function do? It really
+ changes the growth rates, but some code I've found online and in textbooks and
+ papers uses it, while others do exactly the same thing but without the transpose.
+ I have decided not to use it, following Merow et al. 2014 Appendix A.
+
+```{r Kernel, warning=FALSE}
+#Set minimum and maximum sizes
+min.size <- 0.9 * min(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+max.size <- 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+
+#building off of code from Tom Miller:
+mat.size = 100 #dimensions of continuous matrix
+
+# Three-year seedbank
+bigmatrix <- function(params_list, mat.size){
+  n <- mat.size #matrix size
+  L <- min.size #lower integration limit
+  U <- max.size #upper integration limit
+  
+  h <- (U - L)/n #Bin size
+  b <- L + c(0:n) * h #Lower boundaries 
+  y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+  # y is the mesh points of the matrix
+  
+  # Fertility matrix
+  Fmat<-matrix(0,(n+4),(n+4))
+  
+  # Fecundity
+  
+  #Seedlings this year
+  Fmat[4,5:(n+4)] <- Prob_Germ_1 * F_z(y, Year_t, params_list) + #seedlings this years seed
+    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
+  
+  #Seedbank with t-1 and t-2 seeds
+  Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
+  Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
+  
+  # Growth/survival transition matrix
+  Tmat<-matrix(0,(n+4),(n+4))
+  
+  # probability a seed stays in the seedbank
+  Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  
+  # probability seed germinates after 2 years
+  Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
+  
+  # probability seed germinates fresh
+  Tmat[4,3] <- Prob_Germ_1
+  
+  # probability a seedling establishes as adult
+  Tmat[5:(n+4),4] <- Sur_z1(params_list) * Se_z(y, params_list)
+  
+  # survival and growth
+  Tmat[5:(n+4),5:(n+4)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
+  
+  # Full kernel -- adds two kernels built
+  IPMmat <- Fmat + Tmat
+
+  out_lamb <- data.frame(lambda = lambda(IPMmat))
+  return(out_lamb)
+}
+
+Year_t <- c(1,2,3)
+
+# Run the bigmatrix for each row of Params to get lambda
+lamb_lists <- lapply(X = params_list, FUN = bigmatrix, mat.size = mat.size)
+```
+
+Check that everything looks right
+This is a way to check if I needed the transpose function for the outer() function
+I'm just running the bigmatrix once, randomly using the first row of boot_params
+```{r Check output}
+n <- mat.size #matrix size
+L <- min.size #lower integration limit
+U <- max.size #upper integration limit
+h <- (U - L)/n #Bin size
+b <- L + c(0:n) * h #Lower boundaries 
+y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+
+Fmat<-matrix(0,(n+3),(n+3))
+# Fecundity
+#Seedlings this year
+Fmat[3,4:(n+3)] <- Prob_Germ_1 * F_z(y, Year_t, boot_params[1,]) + #seedlings this years seed
+  Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, boot_params[1,]) + #last year seed
+  Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, boot_params[1,]) #2 year ago seed
+#Seedbank with t-1 and t-2 seeds
+Fmat[1,4:(n+3)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, boot_params[1,]) #2-year old seeds
+Fmat[2,4:(n+3)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, boot_params[1,]) #1-year old seeds
+# Growth/survival transition matrix
+Tmat<-matrix(0,(n+3),(n+3))
+# probability a seed stays in the seedbank
+Tmat[2,1] <- 1 - Prob_Germ_1 * Prob_Surv_Seed
+# probability seed germinates after 2 years
+Tmat[3,1] <- Prob_Germ_2 * Prob_Surv_Seed
+
+# probability seed germinates fresh
+Tmat[3,2] <- Prob_Germ_1
+# probability a seedling establishes as adult
+Tmat[4:(n+3),3] <- Sur_z1(boot_params[1,]) * Se_z(y, boot_params[1,])
+# survival and growth
+Tmat[4:(n+3),4:(n+3)] <- (outer(y,y,P_z, Year_t, boot_params[1,])) * h #removed transpose of outer()
+# Full kernel -- adds two kernels built
+IPMmat <- Fmat + (Tmat)
+
+image(Tmat)
+
+image((Tmat^.5))
+image(t(Tmat^.5))
+
+image((Fmat^.5))
+image(t(Fmat^.5))
+
+# Another check:
+
+# The main issue is the order of year t and year t1 in the functions
+# In mine:
+G_z1z <- function(Height_cm_t, Height_cm_t1, Year_t, boot_params) {
+  xb <- x_range(Height_cm_t, Params) # from Lemmer et al. 2021
+  return(dnorm(Height_cm_t1,
+  mean <- boot_params$g.int + boot_params$g.slope * xb + boot_params$g.slope2 * Year_t * xb,
+  sd = boot_params$grow.sd))
+}
+# Year t comes first
+
+# Based on the Appendix 1A page 12 in Merow et al. 2014 ("Advancing Population Ecology...),
+# this is also correct
+# They do the reverse (t1 and then t), but also transpose later on
+```
+I think it looks like I don't need the transpose for the way I've written the growth
+ and survival function P_z. It makes more sense for a plant to get bigger from
+ one year to the next than to get smaller or stay the same size, especially for
+ the smaller plants.
+
+Save lambda
+```{r eval=FALSE, include=FALSE}
+#save model output
+# saveRDS(lamb_lists, file = "~/Research/Data/IPM_Formatted_STYL/Output/IPM_Lambda.rds")
+
+# Load IPM output
+# lamb_lists <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPM_Lambda.rds")
+```
+
+Summarize the bootstrapped growth rates
+```{r}
+boot_lambda <- do.call(rbind, lamb_lists)
+
+boot_lambda[,2] <- c(rep(1, 3000), rep(2, 3000), rep(3, 3000), rep(4, 3000))
+boot_lambda[,3] <- rep(c(1, 2, 3), times = 4000)
+
+names(boot_lambda) <- c("lambda", "Population", "Year_t")
+str(boot_lambda)
+boot_lambda <- boot_lambda %>%
+  mutate(Population = case_when(Population == 1 ~ "Bayfield",
+                                Population == 2 ~ "Fanshawe",
+                                Population == 3 ~ "Ilderton",
+                                Population == 4 ~ "RBG"),
+         Year_t = case_when(Year_t == 1 ~ 2022,
+                            Year_t == 2 ~ 2023,
+                            Year_t == 3 ~ 2024))
+boot_lambda$Population <- as.factor(boot_lambda$Population)
+boot_lambda$Year_t <- as.factor(boot_lambda$Year_t)
+
+head(boot_lambda)
+
+# Find mean and standard error for each population in each year
+boot_error <- boot_lambda %>%
+  group_by(Population, Year_t) %>%
+  summarise(SE = sd(lambda)/sqrt(length(lambda)),
+            Mean = mean(lambda)) %>%
+  arrange(Mean)
+boot_error
+```
+
+Plot growth rates
+```{r}
+# make facet labels
+PopFacet <- c("Bayfield" = "(a)", "Fanshawe" = "(b)", "Ilderton"= "(c)", "RBG" = "(d)")
+
+# As a boxplot
+p <- ggplot(boot_lambda, aes(x = Year_t, y = lambda)) +
+  geom_boxplot() +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  geom_line() +
+  facet_wrap(~Population, labeller = as_labeller(PopFacet)) +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  theme_classic() +
+  theme(strip.background = element_blank()) +
+  # adds axes to each facet
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
+  # adjust facet labels
+  theme(strip.text = element_text( size = 12, color = "black")) +
+  theme(strip.text = element_text(hjust = 0)) +
+  #font size
+  theme(text = element_text(size = 14))  
+
+# with  ggarrange
+p <- ggplot(boot_lambda %>%
+              filter(Population == "Bayfield"), aes(x = Year_t, y = lambda)) +
+  geom_boxplot() +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  geom_line() +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  scale_y_continuous(limits=c(0.85,1.62)) +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank())
+p2 <- ggplot(boot_lambda %>%
+              filter(Population == "Fanshawe"), aes(x = Year_t, y = lambda)) +
+  geom_boxplot() +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  geom_line() +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  scale_y_continuous(limits=c(0.85,1.62)) +
+  theme_classic() +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank())
+p3 <- ggplot(boot_lambda %>%
+              filter(Population == "Ilderton"), aes(x = Year_t, y = lambda)) +
+  geom_boxplot() +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  geom_line() +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  scale_y_continuous(limits=c(0.7,1.8)) +
+  theme_classic()
+p4 <- ggplot(boot_lambda %>%
+              filter(Population == "RBG"), aes(x = Year_t, y = lambda)) +
+  geom_boxplot() +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  geom_line() +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  scale_y_continuous(limits=c(0.7,1.8)) +
+  theme_classic() +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank())
+
+Graphs <- ggarrange(p,  p2,  p3,  p4,
+                      labels = c("(a)", "(b)", "(c)", "(d)"),
+                    widths = c(1,1,1,1),
+                      font.label = list(size = 11), 
+                      hjust = c(-3.5,-0.7,-3.5, -0.7),
+                      #hjust = c(-1.5,-0.2,-0.2, -1.5, -0.2, -0.2),
+                      ncol = 2, nrow = 2, align = "h")
+Graphs
+
+# Mean and 95% CI
+## Used for comparison with IPopM
+data1 <- boot_lambda %>%
+  group_by(Population, Year_t) %>%
+  summarise(mean = mean(lambda),
+            Q2.5 = quantile(lambda, probs = 0.025),
+            Q97.5 = quantile(lambda, probs = 0.975))
+
+p <- ggplot(data1, aes(x = Year_t, y = mean)) +
+  geom_errorbar(aes(ymin = Q2.5, ymax = Q97.5), width = 0.1) +
+    geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  geom_line() +
+  facet_wrap(~Population) +
+  geom_point() +
+  theme_classic()
+p
+
+# Save graph
+# ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
+#       filename = "Population_Lambda.png",
+#       path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
+#       filename = "Population_Lambda.pdf",
+#       path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+```
+
+# Deterministic Model
+
+Gather parameters
+```{r Parameters - Deterministic}
+# First need year and population numbers
+Year_t <- c(1,2,3)
+Population <- c(1,2,3,4)
+
+# Survival
+S.Intercepts <- c(Bs.intercept, Fs.intercept, Is.intercept, Rs.intercept)
+S.Slopes1 <- c(Bs.slope1, Fs.slope1, Is.slope1, Rs.slope1)
+
+data1 <- as.data.frame(cbind(S.Intercepts, S.Slopes1, Population))
+
+surv.d <- data.frame()
+row_index <- 1
+for(j in 1:length(Population)){
+  for (i in 1:length(Year_t)) {
+    surv.d[row_index, "s.int"] <-  data1[j, 1]# + data1[j, 3] * Year_t[i]
+    surv.d[row_index, "Year_t"] <- Year_t[i]
+    surv.d[row_index, "Population"] <- Population[j]
+    # move to the next row
+    row_index <- row_index + 1
+    }
+}
+
+S.Slopes1 <- as.data.frame(cbind(S.Slopes1, Population))
+surv.d <- left_join(surv.d, S.Slopes1)
+
+# Growth
+G.Intercepts <- c(Bg.intercept, Fg.intercept, Ig.intercept, Rg.intercept)
+G.Slopes1 <- c(Bg.slope1, Fg.slope1, Ig.slope1, Rg.slope1)
+G.Slopes2 <- c(Bg.slope2, Fg.slope2, Ig.slope2, Rg.slope2)
+G.Slopes3 <- c(Bg.slope3, Fg.slope3, Ig.slope3, Rg.slope3)
+
+data1 <- as.data.frame(cbind(G.Intercepts, G.Slopes1, G.Slopes2, G.Slopes3, Population))
+
+grow.d <- data.frame()
+row_index <- 1
+for(j in 1:length(Population)){
+  for (i in 1:length(Year_t)) {
+    grow.d[row_index, "g.int"] <-  data1[j, 1] + data1[j, 2] * Year_t[i]
+    grow.d[row_index, "Year_t"] <- Year_t[i]
+    grow.d[row_index, "Population"] <- Population[j]
+    # move to the next row
+    row_index <- row_index + 1
+    }
+}
+
+G.Slopes2 <- as.data.frame(cbind(G.Slopes2, Population))
+G.Slopes3 <- as.data.frame(cbind(G.Slopes3, Population))
+grow.d <- left_join(grow.d, G.Slopes2)
+grow.d <- left_join(grow.d, G.Slopes3)
+
+# Growth Variance
+growth_var <- data.frame(Grow_sd = double(), Population = double())
+growth_var[1,1] <- Bgrowth_var
+growth_var[2,1] <- Fgrowth_var
+growth_var[3,1] <- Igrowth_var
+growth_var[4,1] <- Rgrowth_var
+growth_var[1,2] <- 1 # Bayfield
+growth_var[2,2] <- 2 # Fanshawe
+growth_var[3,2] <- 3 # Ilderton
+growth_var[4,2] <- 4 # RBG
+
+# Flowers
+F.Intercepts <- c(Bf.intercept, Ff.intercept, If.intercept, Rf.intercept)
+F.Slopes1 <- c(Bf.slope1, Ff.slope1, If.slope1, Rf.slope1)
+F.Slopes2 <- c(Bf.slope2, Ff.slope2, If.slope2, Rf.slope2)
+F.Slopes3 <- c(Bf.slope3, Ff.slope3, If.slope3, Rf.slope3)
+
+data1 <- as.data.frame(cbind(F.Intercepts, F.Slopes1, F.Slopes2, F.Slopes3, Population))
+
+flower.d <- data.frame()
+row_index <- 1
+for(j in 1:length(Population)){
+  for (i in 1:length(Year_t)) {
+    flower.d[row_index, "fl.int"] <-  data1[j, 1] + data1[j, 2] * Year_t[i]
+    flower.d[row_index, "Year_t"] <- Year_t[i]
+    flower.d[row_index, "Population"] <- Population[j]
+    # move to the next row
+    row_index <- row_index + 1
+    }
+}
+
+F.Slopes2 <- as.data.frame(cbind(F.Slopes2, Population))
+F.Slopes3 <- as.data.frame(cbind(F.Slopes3, Population))
+flower.d <- left_join(flower.d, F.Slopes2)
+flower.d <- left_join(flower.d, F.Slopes3)
+
+#Seeds
+Se.Intercepts <- c(Bse.intercept, Fse.intercept, Ise.intercept, Rse.intercept)
+Se.Slopes1 <- c(Bse.slope1, Fse.slope1, Ise.slope1, Rse.slope1)
+Se.Slopes2 <- c(Bse.slope2, Fse.slope2, Ise.slope2, Rse.slope2)
+Se.Slopes3 <- c(Bse.slope3, Fse.slope3, Ise.slope3, Rse.slope3)
+
+data1 <- as.data.frame(cbind(Se.Intercepts, Se.Slopes1, Se.Slopes2, Se.Slopes3, Population))
+
+seed.d <- data.frame()
+row_index <- 1
+for(j in 1:length(Population)){
+  for (i in 1:length(Year_t)) {
+    seed.d[row_index, "se.int"] <-  data1[j, 1] + data1[j, 2] * Year_t[i]
+    seed.d[row_index, "Year_t"] <- Year_t[i]
+    seed.d[row_index, "Population"] <- Population[j]
+    # move to the next row
+    row_index <- row_index + 1
+    }
+}
+
+Se.Slopes2 <- as.data.frame(cbind(Se.Slopes2, Population))
+Se.Slopes3 <- as.data.frame(cbind(Se.Slopes3, Population))
+seed.d <- left_join(seed.d, Se.Slopes2)
+seed.d <- left_join(seed.d, Se.Slopes3)
+
+
+### Combine them all into one dataframe
+Params <- left_join(surv.d, grow.d)
+Params <- left_join(Params, flower.d, by = c("Population", "Year_t"))
+Params <- left_join(Params, seed.d, by = c("Population", "Year_t"))
+
+# Rename slopes to match boot_params
+colnames(Params)[colnames(Params) == 'S.Slopes1'] <- 's.slope'
+colnames(Params)[colnames(Params) == 'G.Slopes2'] <- 'g.slope'
+colnames(Params)[colnames(Params) == 'G.Slopes3'] <- 'g.slope2'
+colnames(Params)[colnames(Params) == 'F.Slopes2'] <- 'f.slope'
+colnames(Params)[colnames(Params) == 'F.Slopes3'] <- 'f.slope2'
+
+colnames(Params)[colnames(Params) == 'Se.Slopes2'] <- 'se.slope'
+colnames(Params)[colnames(Params) == 'Se.Slopes3'] <- 'se.slope2'
+
+### Add other things that aren't bootstrapped--these are considered to be the
+# same across all populations and years
+Params$Prob_Germ_1 <- Prob_Germ_1
+Params$Prob_Germ_2 <- Prob_Germ_2
+Params$Prob_Surv_Seed <- Prob_Surv_Seed
+Params$Estab <- est.intercepts
+Params$Recruit_size <- Recr_mean$Recr_mean[match(Params$Population, Recr_mean$Population)]
+Params$Recruit_sd <- Recr_sd$Recr_sd[match(Params$Population, Recr_sd$Population)]
+
+# Add the growth variation--this is considered to be the same across years
+#  but can be different between the populations
+Params$grow.sd <- growth_var$Grow_sd[match(Params$Population, growth_var$Population)]
+
+# Make into a list, one element for each row
+params_list <-  filter(Params) %>%
+  split(., seq(nrow(.)))
+```
+
+## Functions
+```{r Functions - Deterministic}
+########## Eviction ########################################
+# Avoid unintentional eviction
+#Set minimum and maximum sizes
+min.size = 0.9 * min(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+max.size = 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+
+x_range <- function(Height_cm_t, Params) {
+  pmin(pmax(Height_cm_t, min.size), max.size)
+}
+
+######### Survival #########################################
+#Survival of established plants
+S_z <- function(Height_cm_t, Year_t, Params) {
+  xb <- x_range(Height_cm_t, Params)
+  linear_p <- Params$s.int + Params$s.slope * xb
+  p <- 1/(1 + exp(-linear_p))
+  return(p)
+}
+
+#Test this
+mean(S_z(12, 1, Params))
+mean(S_z(70, 2, Params))
+#Seems ok
+
+######### Growth ###########################################
+
+G_z1z <- function(Height_cm_t, Height_cm_t1, Year_t, Params) {
+  xb <- x_range(Height_cm_t, Params)
+  return(dnorm(Height_cm_t1,
+  mean <- Params$g.int + Params$g.slope * xb + Params$g.slope2 * Year_t * xb,
+  sd = Params$grow.sd))
+}
+
+#Test this
+mean(G_z1z(12, 15, 1, Params))
+mean(G_z1z(62, 70, 2, Params))
+# I think this is right
+
+######### Combine Survival and Growth ######################
+P_z <- function(Height_cm_t, Height_cm_t1, Year_t, Params){
+  xb <- x_range(Height_cm_t, Params)
+  return(S_z(xb, Year_t, Params) * G_z1z(xb, Height_cm_t1, Year_t, Params))
+}
+
+#Test this
+mean(P_z(12, 15, 1, Params))
+mean(P_z(54, 72, 2, Params))
+
+######### Probability of Flowering #########################
+
+#based on year t
+Pf_z <- function(Height_cm_t, Year_t, Params) {
+  xb <- x_range(Height_cm_t, Params)
+  u <- exp(Params$fl.int + Params$f.slope * xb + Params$f.slope2 * Year_t * xb)
+  p <- 1/(1 + exp(-u))
+  return(p)
+}
+
+#Test this
+mean(Pf_z(12, 1, Params))
+mean(Pf_z(72, 2, Params))
+# Yup
+
+######### Seeds Per Plant ##################################
+
+Sf_z <- function(Height_cm_t, Year_t, Params){
+  nseed <- Params$se.int + Params$se.slope * Height_cm_t + Params$se.slope2 * Year_t * Height_cm_t
+  return(exp(nseed)) # The seeds values are logged, so I need to reverse them to real values
+}
+
+#Test this
+mean(Sf_z(12, 1, Params))
+mean(Sf_z(72, 2, Params))
+# Yup!!
+
+######### Flowering Probability and Seed Number ############
+
+F_z <- function(Height_cm_t, Year_t, Params) {
+  xb <- x_range(Height_cm_t, Params)
+  x <- Pf_z(xb, Year_t, Params) * Sf_z(xb, Year_t, Params)
+  return(x)
+}
+
+# Test this
+mean(F_z(12, 1, Params))
+mean(F_z(72, 2, Params))
+
+########## Seedling Sizes ##################################
+Se_z <- function(Height_cm_t1, Params){
+  dnorm(x = Height_cm_t1,
+        mean = Params$Recruit_size,
+        sd = Params$Recruit_sd)
+}
+
+#Test this
+mean(Se_z(5, Params))
+mean(Se_z(10, Params))
+
+########## Seedling Survival ###############################
+Sur_z1 <- function(Params){
+  surv_adults <- Params$Estab
+  return(surv_adults)
+}
+
+#Test this
+mean(Sur_z1(Params))
+#yep
+
+########## Seed bank #######################################
+S1_z <- function(Height_cm_t, Year_t,Params){
+  f <- F_z(Height_cm_t, Year_t, Params) * (1 - Params$Prob_Germ_1)
+  return(f);
+}
+
+#Test this
+mean(S1_z(12, 1, Params))
+mean(S1_z(72, 2, Params))
+#looks pretty good
+```
+
+## Kernel
+```{r Kernel - Deterministic, warning=FALSE}
+#Set minimum and maximum sizes
+min.size <- 0.9 * min(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+max.size <- 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+
+#building off of code from Tom Miller:
+mat.size = 100 #dimensions of continuous matrix
+
+bigmatrix <- function(params_list, mat.size){
+  n <- mat.size #matrix size
+  L <- min.size #lower integration limit
+  U <- max.size #upper integration limit
+  
+  h <- (U - L)/n #Bin size
+  b <- L + c(0:n) * h #Lower boundaries 
+  y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+  # y is the mesh points of the matrix
+  
+  # Fertility matrix
+  Fmat<-matrix(0,(n+4),(n+4))
+  
+  # Fecundity
+  
+  #Seedlings this year
+  Fmat[4,5:(n+4)] <- Prob_Germ_1 * F_z(y, Year_t, params_list) + #seedlings this years seed
+    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
+  
+  #Seedbank with t-1 and t-2 seeds
+  Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
+  Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
+  
+  # Growth/survival transition matrix
+  Tmat<-matrix(0,(n+4),(n+4))
+  
+  # probability a seed stays in the seedbank
+  Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  
+  # probability seed germinates after 2 years
+  Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
+  
+  # probability seed germinates fresh
+  Tmat[4,3] <- Prob_Germ_1
+  
+  # probability a seedling establishes as adult
+  Tmat[5:(n+4),4] <- Sur_z1(params_list) * Se_z(y, params_list)
+  
+  # survival and growth
+  Tmat[5:(n+4),5:(n+4)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
+  
+  # Full kernel -- adds two kernels built
+  IPMmat <- Fmat + Tmat
+  
+  out_matrix <- list(IPMmat = IPMmat, Fmat = Fmat, Tmat = Tmat, meshpts = y)
+
+  return(out_matrix)
+}
+
+# Run for all rows of Params
+lamb_lists <- lapply(X = params_list, FUN = bigmatrix, mat.size = mat.size)
+```
+
+
+Save matrices
+```{r eval=FALSE, include=FALSE}
+#save model output
+# saveRDS(lamb_lists, file = "~/Research/Data/IPM_Formatted_STYL/Output/IPM_Matrix.rds")
+
+# Load IPM output
+# lamb_lists <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPM_Matrix.rds")
+```
+
+Check lambda
+```{r}
+### Lambda
+GrowthData <- data.frame(matrix(ncol = 3, nrow = 12))
+colnames(GrowthData) <- c("Population", "Year_t", "lambda")
+GrowthData$Year_t <- as.factor(c(rep(c(2022, 2023, 2024), 4)))
+GrowthData$Population <- c("Bayfield", "Bayfield", "Bayfield",
+                           "Fanshawe", "Fanshawe", "Fanshawe",
+                           "Ilderton", "Ilderton", "Ilderton",
+                           "RBG", "RBG", "RBG")
+
+GrowthData[1,3] <- lambda(lamb_lists$`1`$IPMmat)
+GrowthData[2,3] <- lambda(lamb_lists$`2`$IPMmat)
+GrowthData[3,3] <- lambda(lamb_lists$`3`$IPMmat)
+GrowthData[4,3] <- lambda(lamb_lists$`4`$IPMmat)
+GrowthData[5,3] <- lambda(lamb_lists$`5`$IPMmat)
+GrowthData[6,3] <- lambda(lamb_lists$`6`$IPMmat)
+GrowthData[7,3] <- lambda(lamb_lists$`7`$IPMmat)
+GrowthData[8,3] <- lambda(lamb_lists$`8`$IPMmat)
+GrowthData[9,3] <- lambda(lamb_lists$`9`$IPMmat)
+GrowthData[10,3] <- lambda(lamb_lists$`10`$IPMmat)
+GrowthData[11,3] <- lambda(lamb_lists$`11`$IPMmat)
+GrowthData[12,3] <- lambda(lamb_lists$`12`$IPMmat)
+
+GrowthData
+```
+
+# Basic analysis
+
+Code from:
+https://github.com/ipmbook/first-edition/blob/master/Rcode/c4/Ungulate%20Pert%20Lambda%20Calc.R
+https://github.com/ipmbook/first-edition/blob/master/Rcode/c4/Ungulate%20Pert%20Lambda%20Calc.R
+
+## Kernel Elasticity
+
+```{r}
+#Set minimum and maximum sizes
+min.size <- 0.9 * min(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+max.size <- 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+
+mat.size <- 100 #dimensions of continuous matrix
+
+lambda <-  data.frame(matrix(ncol = 12, nrow = 1))
+#provide column names
+colnames(lambda) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
+                      'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
+w.z <- data.frame(matrix(ncol = 12, nrow = 104))
+#provide column names
+colnames(w.z) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
+                      'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
+v.z1 <- data.frame(matrix(ncol = 12, nrow = 104))
+#provide column names
+colnames(v.z1) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
+                      'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
+
+stable.dist <- data.frame(matrix(ncol = 12, nrow = 104))
+#provide column names
+colnames(stable.dist) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
+                      'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
+repro.val <- data.frame(matrix(ncol = 12, nrow = 104))
+#provide column names
+colnames(repro.val) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
+                      'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
+#make an empty list
+K <- vector(mode='list', length = 12)
+P <- vector(mode='list', length = 12)
+F <- vector(mode='list', length = 12)
+
+K.sens <- vector(mode='list', length = 12)
+K.elas <- vector(mode='list', length = 12)
+
+P.elas <- vector(mode='list', length = 12)
+F.elas <- vector(mode='list', length = 12)
+
+#keep track of if things add to 1 as they should
+K.test <- vector(mode='list', length = 12)
+
+##############################
+  n <- mat.size  #matrix size
+  L <- min.size #lower integration limit
+  U <- max.size #upper integration limit
+ 
+  h <- (U - L)/n #Bin size
+  b <- L + c(0:n) * h #Lower boundaries 
+  y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+  # y is the mesh points of the matrix
+
+for(i in 1:12){
+  IPM.sys <- bigmatrix(params_list[[i]],100)
+  
+  ## extract the mesh points and the kernel
+  meshpts <- IPM.sys$meshpts
+  h <- diff(meshpts[1:2])
+  K[[i]] <- IPM.sys$IPMmat
+  P[[i]] <- IPM.sys$Tmat
+  F[[i]] <- IPM.sys$Fmat
+  
+  ## compute the eigen vectors / values 
+  IPM.eig.sys <- eigen(K[[i]])
+  ## lambda
+  lambda[,i] <- Re(IPM.eig.sys$values[1])
+  ## unnormalised stable size distribution ('w')
+  w.z[,i] <- Re(IPM.eig.sys$vectors[,1])
+  
+  ## unnormalised reproductive value distribution ('v')
+  v.z1[,i] <- Re(eigen(t(K[[i]]))$vectors[,1])
+  ################
+  
+  ## kernel sensitivity
+  K.sens[[i]] <- outer(v.z1[,i], w.z[,i], "*")/sum(v.z1[,i] * w.z[,i] * h)
+  ## kernel elasticity
+  K.elas[[i]] <- K.sens[[i]] * (K[[i]]/h) / lambda[,i]
+  ## does the kernel elasticity integrate to 1?
+  K.test[i] <- sum(K.elas[[i]]) * h^2
+
+  ## calculate the elasticities of the survival and reproduction components
+  P[[i]] <- IPM.sys$Tmat  / h
+  F[[i]]  <- IPM.sys$Fmat  / h
+  P.elas[[i]] <- P[[i]]  * K.sens[[i]] / lambda[,i]
+  F.elas[[i]] <- F[[i]]  * K.sens[[i]] / lambda[,i]
+  
+  ## get the relative contributions of survival and reproduction to lambda
+  sum(P.elas[[i]]) * h^2
+  sum(F.elas[[i]]) * h^2
+}
+
+# Check that elasticities sum to one before running anything else
+K.test
+# They are!
+
+######################################
+#plot sensitivity
+  n <- mat.size# + 4  #matrix size
+  L <- min.size #lower integration limit
+  U <- max.size #upper integration limit
+  h <- (U - L)/n #Bin size
+  b <- L + c(0:n) * h #Lower boundaries 
+  y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+  # y is the mesh points of the matrix
+  
+# plot one of these
+#png(filename = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity.png",
+#    width = 6, height = 6, units = "in", res = 600)
+  
+data1 <- K.elas[[1]]
+
+# make separate image for seedlings
+data2 <- data1
+data2[5:104,5:104] <- NA
+data2[1:3, 1:3] <- NA
+y2 <- c(-0.1, -0.01, -0.001, 0, y)
+
+# and seedbank
+data3 <- data1
+data3[4:104,4:104] <- NA
+y3 <- c(-3, -2, -1, -0.99, y)
+
+
+image(y,y,t(data1[5:104,5:104]), xlab="Size Year t",ylab="Size Year t+1", main="Elasticity",
+           col = terrain.colors(30, rev = T), xlim = c(-3, 90), ylim = c(-3,90))
+
+image(y2,y2,t(data2),
+           col = terrain.colors(30, rev = T), add = T)
+
+image(y3,y3,t(data3),
+           col = terrain.colors(30, rev = T), add = T)
+#dev.off()
+
+#### Another version with a scale! #####
+
+# plot one of these
+#png(filename = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity_scale.png",
+#    width = 7, height = 6, units = "in", res = 600)
+
+# zlim makes them the same scale
+image.plot(y,y,t(data1[5:104,5:104]), xlab="Size Year t",ylab="Size Year t+1",
+           col = terrain.colors(30, rev = T), xlim = c(-3, 90), ylim = c(-3,90), zlim = c(0,0.007))
+
+image.plot(y2,y2,t(data2)^1, zlim = c(0,.007),
+           col = terrain.colors(30, rev = T), add = T)
+
+image.plot(y3,y3,t(data3)^1, zlim = c(0,0.007),
+           col = terrain.colors(30, rev = T), add = T)
+#dev.off()
+```
+
+Make figure with all kernels for supplemental
+```{r}
+#plot sensitivity
+  n <- mat.size + 4  #matrix size
+  L <- min.size #lower integration limit
+  U <- max.size #upper integration limit
+  h <- (U - L)/n #Bin size
+  b <- L + c(0:n) * h #Lower boundaries 
+  y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+  # y is the mesh points of the matrix
+  
+#png(filename = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity_allYrs.png",
+#    width = 8, height = 6, units = "in", res = 600)
+
+par(mfrow = c(4,3)) # so each row is a population
+
+# also need to modify the plot margins for each plot
+
+par(mar=c(1,4,1,1))
+image(y,y,t(K.elas[[1]]),xlab="",ylab="Size (t+1)", col = terrain.colors(30, rev = T), xaxt='n')
+par(mar=c(1,1,1,1))
+image(y,y,t(K.elas[[2]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
+par(mar=c(1,1,1,1))
+image(y,y,t(K.elas[[3]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
+
+par(mar=c(1,4,1,1))
+image(y,y,t(K.elas[[4]]),xlab="",ylab="Size (t+1)", col = terrain.colors(30, rev = T), xaxt='n')
+par(mar=c(1,1,1,1))
+image(y,y,t(K.elas[[5]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
+par(mar=c(1,1,1,1))
+image(y,y,t(K.elas[[6]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
+
+par(mar=c(1,4,1,1))
+image(y,y,t(K.elas[[7]]),xlab="",ylab="Size (t+1)", col = terrain.colors(30, rev = T), xaxt='n')
+par(mar=c(1,1,1,1))
+image(y,y,t(K.elas[[8]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
+par(mar=c(1,1,1,1))
+image(y,y,t(K.elas[[9]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
+
+par(mar=c(4,4,1,1))
+image(y,y,t(K.elas[[10]]),xlab="Size (t)",ylab="Size (t+1)", col = terrain.colors(30, rev = T))
+par(mar=c(4,1,1,1))
+image(y,y,t(K.elas[[11]]),xlab="Size (t)",ylab="", col = terrain.colors(30, rev = T), yaxt="n")
+par(mar=c(4,1,1,1))
+image(y,y,t(K.elas[[12]]),xlab="Size (t)",ylab="", col = terrain.colors(30, rev = T), yaxt="n")
+
+#dev.off()
+```
+
+## Stable Size Distribution
+
+```{r}
+stable.dist <- data.frame(matrix(ncol = 12, nrow = 104))
+
+#plot sensitivity
+n <- mat.size   #matrix size
+L <- min.size #lower integration limit
+U <- max.size #upper integration limit
+h <- (U - L)/n #Bin size
+b <- L + c(0:n) * h #Lower boundaries 
+y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+# y is the mesh points of the matrix
+
+# Normalize the stable distribution
+for(i in 1:12){
+  stable.dist[,i] <- w.z[1:104,i]/sum(w.z[1:104,i])
+}
+
+#maybe don't use smallest sizes
+y <- c(0.5, 1, 1.5, 2, y)
+
+# GGPlot version
+names(stable.dist) <- c("B1", "B2","B3", "F1","F2","F3","I1","I2", "I3","R1","R2", "R3")
+data4 <- stable.dist %>%
+  mutate(y = y) %>%
+  pivot_longer(cols = c("B1", "B2","B3", "F1","F2","F3","I1","I2", "I3","R1","R2", "R3"), names_to = "Population", values_to = "StableSize") %>%
+  mutate(Year = case_when(grepl(1, Population) ~ 2022,
+                          grepl(2, Population) ~ 2023,
+                          grepl(3, Population) ~ 2024)) %>%
+  mutate(Population = case_when(grepl("B", Population) ~ "Bayfield",
+                                grepl("F", Population) ~ "Fanshawe",
+                                grepl("I", Population) ~ "Ilderton",
+                                grepl("R", Population) ~ "RBG"))
+data4$Year <- as.factor(data4$Year)
+
+p <- ggplot(data=data4 %>%
+              filter(Population == "Bayfield") %>%
+              filter(y > 1.5), aes(x=y, y=StableSize, group=Year)) +
+  geom_line(aes(col = Year), size = 1.2) +
+  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73")) +
+  labs(y = "Relative Size Distribution", x = "Height (cm), Year t") +
+  theme_classic() +
+  # Increase font size of population names
+  theme(strip.text = element_text(size = 20)) +
+  #add axes on all graphs, instead of just bottom and left ones
+  theme(axis.line=element_line()) +
+  scale_x_continuous(limits=c(0,90)) +
+  scale_y_continuous(limits=c(0,0.3)) +
+  theme(axis.title.x = element_blank(),
+        axis.text.x=element_blank()) +
+  #move the legend
+  theme(legend.position = "none")
+p2 <- ggplot(data=data4 %>%
+              filter(Population == "Fanshawe") %>%
+              filter(y > 1.5), aes(x=y, y=StableSize, group=Year)) +
+  geom_line(aes(col = Year), size = 1.2) +
+  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73")) +
+  labs(y = "Relative Size Distribution", x = "Height (cm), Year t") +
+  theme_classic() +
+  # Increase font size of population names
+  theme(strip.text = element_text(size = 20)) +
+  #add axes on all graphs, instead of just bottom and left ones
+  theme(axis.line=element_line()) +
+  scale_x_continuous(limits=c(0,90)) +
+  scale_y_continuous(limits=c(0,0.3)) +
+  theme(axis.title = element_blank(),
+        axis.text=element_blank()) +
+  #move the legend
+  theme(legend.position = "none") +
+  theme(strip.background = element_blank())
+p3 <- ggplot(data=data4 %>%
+              filter(Population == "Ilderton") %>%
+              filter(y > 1.5), aes(x=y, y=StableSize, group=Year)) +
+  geom_line(aes(col = Year), size = 1.2) +
+  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73")) +
+  labs(y = "Relative Size Distribution", x = "Height (cm), Year t") +
+  theme_classic() +
+  # Increase font size of population names
+  theme(strip.text = element_text(size = 20)) +
+  #add axes on all graphs, instead of just bottom and left ones
+  theme(axis.line=element_line()) +
+  scale_x_continuous(limits=c(0,90)) +
+  scale_y_continuous(limits=c(0,0.3)) +
+  #move the legend
+  theme(legend.position = "none") +
+  theme(strip.background = element_blank())
+p4 <- ggplot(data=data4 %>%
+              filter(Population == "RBG") %>%
+              filter(y > 1.5), aes(x=y, y=StableSize, group=Year)) +
+  geom_line(aes(col = Year), size = 1.2) +
+  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73")) +
+  labs(y = "Relative Size Distribution", x = "Height (cm), Year t") +
+  theme_classic() +
+  # Increase font size of population names
+  theme(strip.text = element_text(size = 20)) +
+  #add axes on all graphs, instead of just bottom and left ones
+  theme(axis.line=element_line()) +
+  scale_x_continuous(limits=c(0,90)) +
+  scale_y_continuous(limits=c(0,0.3)) +
+  theme(axis.title.y = element_blank(),
+        axis.text.y=element_blank()) +
+  # move the legend
+  theme(legend.position = c(0.85, 0.40)) +
+  theme(strip.background = element_blank())
+
+Graphs <- ggarrange(p,  p2,  p3,  p4,
+                      labels = c("(a)", "(b)", "(c)", "(d)"),
+                    widths = c(1,1,1,1),
+                      font.label = list(size = 11), 
+                      hjust = c(-3.5,-0.7,-3.5, -0.7),
+                      #hjust = c(-1.5,-0.2,-0.2, -1.5, -0.2, -0.2),
+                      ncol = 2, nrow = 2, align = "h")
+
+Graphs
+
+# save plot
+# ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
+#        filename = "StableSizeDist.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
+#        filename = "StableSizeDist.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+```
+
+# Stochastic Growth Rates
+
+Code from:
+https://github.com/ipmbook/first-edition/blob/master/Rcode/c7/Carlina/Carlina%20Fixed%20Effects%20K%20pert.R
+
+```{r Stochastic lambda}
+#Set minimum and maximum sizes
+min.size <- 0.9 * min(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+max.size <- 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+
+mat.size <- 100 #dimensions of continuous matrix
+
+nBigMatrix <- 100
+n.est <- 20000
+n.runin <- 500
+min.size = 0.9 * min(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+max.size = 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+n.years <- 3
+
+
+n <- mat.size #matrix size
+L <- min.size #lower integration limit
+U <- max.size #upper integration limit
+h <- (U - L)/n #Bin size
+b <- L + c(0:n) * h #Lower boundaries 
+y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+
+stoc_pert_analysis<-function(Params,n.est,n.runin){
+	
+	year.i <- sample(1:n.years,n.est+1,replace=TRUE)
+
+	K.year.i <- array(NA,c((nBigMatrix+4),(nBigMatrix+4),n.years))
+	
+	for(i in 1:n.years){
+		year.K<-bigmatrix(Params[i,],nBigMatrix)
+		K.year.i[,,i] <- year.K$IPMmat
+	}
+
+#Calculate mean kernel, v and w
+	mean.kernel <- apply(K.year.i[,,i],1:2,mean)
+	
+	w <- Re(eigen(mean.kernel)$vectors[,1]); 
+	v <- Re(eigen(t(mean.kernel))$vectors[,1]);
+
+	# scale eigenvectors <v,w>=1 
+	w <- abs(w)/sum(h*abs(w))
+	v <- abs(v)
+	v <- v/(h*sum(v*w))
+    cat(h*sum(v*w)," should = 1","\n")
+
+#Esimate Lambda s
+	nt<-rep(1/(nBigMatrix+4),(nBigMatrix+4))
+	rt.V <- rt.N <- rep(NA,n.est)
+	
+#Iterate model
+	for (year.t in 1:n.est){
+		if(year.t%%10000==0) cat("iterate: ", year.t,"\n");
+
+		#iterate model with year-specific kernel
+		nt1<-K.year.i[,,year.i[year.t]] %*% nt
+	
+		sum.nt1<-sum(nt1)
+		
+		#Calculate log growth rates  
+		rt.V[year.t] <- log(sum(nt1*v)/sum(nt*v))
+		rt.N[year.t] <- log(sum(nt1)/sum(nt))
+		nt <- nt1 / sum.nt1  
+	}
+
+Ls <- exp(mean(rt.V))
+	
+### Get wt and Rt time series ###
+	wt<-matrix(1/nBigMatrix, nrow=n.est+1, ncol=(nBigMatrix+4));
+	for (i in 1:n.est) {
+		
+		K             <- K.year.i[,,year.i[i]]
+		wt[i+1,]  <-K %*% wt[i,]
+		wt[i+1,]  <-wt[i+1,]/sum(wt[i+1,]);
+		if(i%%10000==0) cat("wt ",i,"\n")
+
+	}
+
+### Get vt time series ###
+	vt<-matrix(1/nBigMatrix, nrow=n.est+1, ncol=(nBigMatrix+4));
+	for (i in (n.est+1):2) {
+		K           <- K.year.i[,,year.i[i]]
+		vt[i-1,]  <- vt[i,] %*% K
+		vt[i-1,]  <- vt[i-1,]/sum(vt[i-1,]);
+		if(i%%10000==0) cat("vt  ",i,"\n")
+
+	}
+
+sens.s <- matrix(0,nrow=(nBigMatrix+4),ncol=(nBigMatrix+4));
+elas.s <- sens.s
+
+for (i in n.runin:(n.est-n.runin)) {
+	
+		K                 <-   K.year.i[,,year.i[i]]
+		vt1.wt        <-   vt[i+1,]%*%t(wt[i,])
+		vt1.K.wt   <- sum(vt[i+1,] * (K %*% wt[i,]))
+
+		#calculation of the standard sensitivities and elasticities
+	
+		sens.s<-sens.s+vt1.wt/vt1.K.wt;
+
+		elas.s<-elas.s+K*(vt1.wt/vt1.K.wt);
+		
+}
+
+ elas.s <- elas.s/(n.est-2*n.runin+1)
+ sens.s <- Ls*sens.s/(n.est-2*n.runin+1)
+ 
+ return(list(meshpts=year.K$meshpts,h=h,sens.s=sens.s,elas.s=elas.s,mean.kernel=mean.kernel,Ls=Ls))
+
+}
+
+#  I need to run this function on each population separately
+# Each population has 3 rows in the Params dataframe
+# I'll just hard-code it
+#Bayfield
+Params2 <- as.data.frame(Params[1:3,])
+Bpert.K <- stoc_pert_analysis(Params2,n.est,n.runin)
+#Fanshawe
+Params2 <- as.data.frame(Params[4:6,])
+Fpert.K <- stoc_pert_analysis(Params2,n.est,n.runin)
+#Ilderton
+Params2 <- as.data.frame(Params[7:9,])
+Ipert.K <- stoc_pert_analysis(Params2,n.est,n.runin)
+#RBG
+Params2 <- as.data.frame(Params[10:12,])
+Rpert.K <- stoc_pert_analysis(Params2,n.est,n.runin)
+
+####
+Stoch_lambda <-  data.frame(matrix(nrow = 4, ncol = 2))
+colnames(Stoch_lambda) <- c("Population", "Lambda")
+Stoch_lambda[,1] <- c("Bayfield", "Fansahwe", "Ilderton", "RBG")
+Stoch_lambda[1,2] <- Bpert.K$Ls
+Stoch_lambda[2,2] <- Fpert.K$Ls
+Stoch_lambda[3,2] <- Ipert.K$Ls
+Stoch_lambda[4,2] <- Rpert.K$Ls
+
+Stoch_lambda
+
+# Save to a dataframe
+# write.csv(Stoch_lambda, "~/Research/Data/IPM_Formatted_STYL/Output/Stoch_Lambda.csv", row.names = FALSE)
+
+# Just to check that I did this right
+# https://rdrr.io/cran/popbio/man/stoch.growth.rate.html
+Blamb_lists <- list(lamb_lists$`1`$IPMmat, lamb_lists$`2`$IPMmat, lamb_lists$`3`$IPMmat)
+testdata <- stoch.growth.rate(Blamb_lists, verbose = T)
+exp(testdata$sim)
+# Yup, this is nearly the same for Bayfield!
+```
+
+## Parameter-Level Sensitivity and Elasticity
+
+all code from https://github.com/jloesberg/Primula/blob/main/scripts/primula_IPM.rmd
+
+```{r}
+#goal: examine sensitivity of parameters
+perturbation <- 0.01 #perturbation
+
+sens.params <- Params %>%
+  # Add seed number
+  mutate(Seeds = case_when(Population == 1 ~ Bayfield_seeds,
+                           Population == 2 ~ Fanshawe_seeds,
+                           Population == 3 ~ Ilderton_seeds,
+                           Population == 4 ~ RBG_seeds,
+                           TRUE ~ NA_real_))
+
+sens.params$version <- "original"
+
+sens.params.g.int <- sens.params %>% 
+  mutate(g.int = g.int + perturbation,
+         version = "g.int")
+sens.params.g.slope <- sens.params %>% 
+  mutate(g.slope = g.slope + perturbation,
+         g.slope2 = g.slope2 + perturbation,##
+         version = "g.slope")
+sens.params.surv.int <- sens.params %>% 
+  mutate(s.int = s.int + perturbation,
+         version = "s.int")
+sens.params.surv.slope <- sens.params %>% 
+  mutate(s.slope = s.slope + perturbation,
+         version = "s.slope")
+sens.params.pflow.int <- sens.params %>% 
+  mutate(fl.int = fl.int + perturbation,
+         version = "fl.int")
+sens.params.pflow.slope <- sens.params %>% 
+  mutate(f.slope = f.slope + perturbation,
+         f.slope2 = f.slope + perturbation,##
+         version = "f.slope")
+sens.params.numse.int <- sens.params %>% 
+  mutate(se.int = se.int + perturbation,
+         version = "se.int")
+sens.params.numse.slope <- sens.params %>% 
+  mutate(se.slope = se.slope + perturbation,
+         se.slope2 = se.slope2 + perturbation,##
+         version = "se.slope")
+sens.params.rec.size.mean <- sens.params %>% 
+  mutate(Recruit_size = Recruit_size + perturbation,
+         version = "Recruit_size")
+sens.paramsProb_Germ_1 <- sens.params %>% 
+  mutate(Prob_Germ_1 = Prob_Germ_1 + perturbation,
+         version = "Prob_Germ_1")
+sens.paramsProb_Germ_2 <- sens.params %>% 
+  mutate(Prob_Germ_2 = Prob_Germ_2 + perturbation,
+         version = "Prob_Germ_2")
+sens.paramsSurvSeed <- sens.params %>% 
+  mutate(Prob_Surv_Seed = Prob_Surv_Seed + perturbation,
+         version = "Prob_Surv_Seed")
+
+sens.paramsSurvEstab <- sens.params %>% 
+  mutate(Estab = Estab + perturbation,
+         version = "Estab")
+
+# make list of models
+sens <- mget(ls(pattern = "^sens.params"))
+
+sens <- do.call("rbind", sens)
+
+#split list by row
+ltre_list <-  filter(sens) %>% split(., seq(nrow(.))) 
+
+# Kernel
+
+#Set minimum and maximum sizes
+min.size <- 0.9 * min(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+max.size <- 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
+
+mat.size = 100 #dimensions of continuous matrix
+
+bigmatrix<-function(ltre_list, mat.size){
+  n <- mat.size #matrix size
+  L <- min.size #lower integration limit
+  U <- max.size #upper integration limit
+  
+  h <- (U - L)/n #Bin size
+  b <- L + c(0:n) * h #Lower boundaries 
+  y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+  # y is the mesh points of the matrix
+  
+  # Fertility matrix
+  Fmat<-matrix(0,(n+4),(n+4))
+  
+  # Fecundity
+  
+  #Seedlings this year
+  Fmat[4,5:(n+4)] <- Prob_Germ_1 * F_z(y, Year_t, ltre_list) + #seedlings this years seed
+    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, ltre_list) + #last year seed
+    Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, ltre_list) #2 year ago seed
+  
+  #Seedbank with t-1 and t-2 seeds
+  Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, ltre_list) #3-year old seeds
+  Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, ltre_list) #2-year old seeds
+  Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, ltre_list) #1-year old seeds
+  
+  # Growth/survival transition matrix
+  Tmat<-matrix(0,(n+4),(n+4))
+  
+  # probability a seed stays in the seedbank
+  Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  
+  # probability seed germinates after 2 years
+  Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
+  
+  # probability seed germinates fresh
+  Tmat[4,3] <- Prob_Germ_1
+  
+  # probability a seedling establishes as adult
+  Tmat[5:(n+4),4] <- Sur_z1(ltre_list) * Se_z(y, ltre_list)
+  
+  # survival and growth
+  Tmat[5:(n+4),5:(n+4)] <- (outer(y,y,P_z, Year_t, ltre_list)) * h
+  
+  # Full kernel -- adds two kernels built
+  IPMmat <- Fmat + Tmat
+  
+  out_lamb <- data.frame(lambda = lambda(IPMmat), version = ltre_list$version)
+  return(out_lamb)
+  
+}
+
+# run kernel for eah row of ltre_list
+lamb_lists <- lapply(X = ltre_list, FUN = bigmatrix, mat.size = mat.size)
+
+# make into a dataframe
+ltre_lambda <- do.call("rbind", lamb_lists)
+
+# add column for sensitivity
+ltre_lambda$sensitivity <- NA
+
+# I have to subtract the correct population/year combination
+ltre_lambda$Year_t <- sens$Year_t
+ltre_lambda$Population <- sens$Population
+
+ltre_lambda_orig <- ltre_lambda$lambda[1:12]
+
+ltre_lambda <- ltre_lambda %>%
+  mutate(sensitivity = case_when(Year_t == 1 & Population == 1 ~ (lambda - ltre_lambda_orig[1])/perturbation,
+                                 Year_t == 2 & Population == 1 ~ (lambda - ltre_lambda_orig[2])/perturbation,
+                                 Year_t == 3 & Population == 1 ~ (lambda - ltre_lambda_orig[3])/perturbation,
+                                 Year_t == 1 & Population == 2 ~ (lambda - ltre_lambda_orig[4])/perturbation,
+                                 Year_t == 2 & Population == 2 ~ (lambda - ltre_lambda_orig[5])/perturbation,
+                                 Year_t == 3 & Population == 2 ~ (lambda - ltre_lambda_orig[6])/perturbation,
+                                 Year_t == 1 & Population == 3 ~ (lambda - ltre_lambda_orig[7])/perturbation,
+                                 Year_t == 2 & Population == 3 ~ (lambda - ltre_lambda_orig[8])/perturbation,
+                                 Year_t == 3 & Population == 3 ~ (lambda - ltre_lambda_orig[9])/perturbation,
+                                 Year_t == 1 & Population == 4 ~ (lambda - ltre_lambda_orig[10])/perturbation,
+                                 Year_t == 2 & Population == 4 ~ (lambda - ltre_lambda_orig[11])/perturbation,
+                                 Year_t == 3 & Population == 4 ~ (lambda - ltre_lambda_orig[12])/perturbation,
+                                 TRUE ~ NA_real_)) %>%
+  mutate(sensitivity = case_when(version == "original" ~ NA,
+                                 TRUE ~ sensitivity)) %>%
+  arrange(Year_t, Population, version)
+
+#sensitivity of lambda to each parameter
+#Graph <- ltre_lambda %>% filter(version != "original") %>% 
+#    ggplot(aes(x = version, y = sensitivity))+
+#    geom_point() +
+#    facet_grid(Year_t ~ Population) +
+#    labs(x = "Vital Rate Coefficient", y = "Sensitivity of lambda to coefficient")+
+#    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Elasticity
+original <- sens.params %>%
+  pivot_longer(cols = c(1, 4:21), names_to = "perturb", values_to = "coef")%>%
+  filter(perturb != "f.slope2") %>%
+  filter(perturb != "g.slope2") %>%
+  filter(perturb != "se.slope2") %>%
+  filter(perturb != "Recruit_sd") %>%
+  filter(perturb != "Seeds") %>%
+  filter(perturb != "grow.sd") %>%
+  arrange(Year_t, Population, perturb)
+
+ltre_lambda <- ltre_lambda %>%
+  filter(version != "original")
+  
+ltre_lambda$coef <- original$coef
+ltre_lambda$check <- original$perturb
+
+# Calculate elasticities
+ltre_lambda$elasticity <- NA
+ltre_lambda <- ltre_lambda %>% 
+  mutate(elasticity = sensitivity * as.numeric(coef)/lambda) %>%
+  mutate(vr = case_when(version %in% c("f.slope", "fl.int", "se.int", "se.slope") ~ "fecundity",
+                        version %in% c("g.int", "g.slope") ~ "growth",
+                        version %in% c("s.int", "s.slope") ~ "survival",
+                        version == "original" ~ NA_character_,
+                        TRUE ~ "discrete")) %>%
+  mutate(Population = case_when(Population == 1 ~ "Bayfield",
+                                Population == 2 ~ "Fanshawe",
+                                Population == 3 ~ "Ilderton",
+                                Population == 4 ~ "RBG")) %>%
+  # Fix names of things
+  mutate(version = case_when(version == "g.int" ~ "Growth Intercept",
+                             version == "g.slope" ~ "Growth Slope",
+                             version == "se.int" ~ "Seed Production Intercept",
+                             version == "se.slope" ~ "Seed Production Slope",
+                             version == "fl.int" ~ "Flowering Intercept",
+                             version == "f.slope" ~ "Flowering Slope",
+                             version == "Recruit_Size" ~ "Recruit Size",
+                             version == "s.int" ~ "Survival Intercept",
+                             version == "s.slope" ~ "Survival Slope",
+                             version == "Prob_Germ_1" ~ "Fresh Germination",
+                             version == "Prob_Germ_2" ~ "Seedbank Germination",
+                             version == "Prob_Surv_Seed" ~ "Seed Viability",
+                             version == "Estab" ~ "Seedling Establishment"))
+  
+#elasticity of lambda to each parameter
+
+#re-arrange levels for figure
+ltre_lambda$version <- factor(ltre_lambda$version, levels = c("Survival Intercept",
+                                                                   "Survival Slope",
+                                                                   "Growth Intercept",
+                                                                   "Growth Slope",
+                                                                   "Flowering Intercept",
+                                                                   "Flowering Slope",
+                                                                   "Seed Production Intercept",
+                                                                   "Seed Production Slope",
+                                                                   "Seedling Establishment",
+                                                                   "Fresh Germination",
+                                                                   "Seedbank Germination",
+                                                                   "Seed Viability"))
+
+# remove seed bank and seed viability for clarity
+ltre_lambda <- ltre_lambda %>%
+  filter(version != "Seedbank Germination") %>%
+  filter(version != "Seed Viability")
+
+PopFacet <- c("Bayfield" = "(a)", "Fanshawe" = "(b)", "Ilderton"= "(c)", "RBG" = "(d)")
+
+elas.fig <- ltre_lambda %>% 
+  filter(version != "original") %>%
+  filter(Year_t == 1) %>%
+  ggplot(aes(x = version, y = elasticity)) +
+  geom_bar(stat = "identity", fill = "darkgray")+
+  labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
+  facet_wrap(~Population, labeller = as_labeller(PopFacet)) +
+  geom_hline(yintercept = 0) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(axis.text.x = element_text(angle = 50, vjust = 1, hjust=1)) +
+  theme(strip.background = element_blank()) +
+  theme(strip.text = element_text(hjust = 0, size = 12)) +
+  #font size
+  theme(text = element_text(size = 14))  
+
+elas.fig
+
+# ggsave(plot = elas.fig, dpi = 600, width = 12, height = 6,
+#        filename = "Elasticity_ParamsYr1.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = elas.fig, dpi = 600, width = 12, height = 6,
+#        filename = "Elasticity_ParamsYr1.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+
+### make it with multiple panels
+p <- ltre_lambda %>% 
+    filter(version != "original") %>%
+    filter(Year_t == 1) %>%
+    filter(Population == "Bayfield") %>%
+    ggplot(aes(x = version, y = elasticity)) +
+    geom_bar(stat = "identity", fill = "darkgray")+
+    labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
+  scale_y_continuous(limits = c(-2.1, 0.7)) +
+    geom_hline(yintercept = 0) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(axis.title.x = element_blank(),
+        axis.text.x=element_blank(),
+        axis.title.y = element_text(size = 14),
+        axis.text.y = element_text(size = 12)) +
+  scale_x_discrete(expand = expansion(mult = c(0.1, 0.0)))
+
+p2 <- ltre_lambda %>% 
+    filter(version != "original") %>%
+    filter(Year_t == 1) %>%
+    filter(Population == "Fanshawe") %>%
+    ggplot(aes(x = version, y = elasticity)) +
+    geom_bar(stat = "identity", fill = "darkgray")+
+    labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
+    theme(axis.text.x = element_text(angle = 0, hjust = 1)) +
+    scale_y_continuous(limits = c(-2.1, 0.7)) +
+    geom_hline(yintercept = 0) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank()) +
+  scale_x_discrete(expand = expansion(mult = c(0.1, 0.0)))
+
+p3 <- ltre_lambda %>% 
+    filter(version != "original") %>%
+    filter(Year_t == 1) %>%
+    filter(Population == "Ilderton") %>%
+    ggplot(aes(x = version, y = elasticity)) +
+    geom_bar(stat = "identity", fill = "darkgray")+
+    labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    theme(axis.title = element_text(size = 14)) +
+      scale_y_continuous(limits = c(-1.8, 2)) +
+    geom_hline(yintercept = 0) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(axis.title = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size = 14),
+        axis.text.y = element_text(size = 12)) +
+  scale_x_discrete(expand = expansion(mult = c(0.1, 0.0)))
+
+p4 <- ltre_lambda %>% 
+    filter(version != "original") %>%
+    filter(Year_t == 1) %>%
+    filter(Population == "RBG") %>%
+    ggplot(aes(x = version, y = elasticity)) +
+    geom_bar(stat = "identity", fill = "darkgray")+
+    labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      scale_y_continuous(limits = c(-1.8, 2)) +
+    geom_hline(yintercept = 0) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size = 14),
+        axis.title.x = element_text(size = 14),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank()) +
+  scale_x_discrete(expand = expansion(mult = c(0.1, 0.0)))
+
+Graphs <- ggarrange(p,  p2,  p3,  p4,
+                      labels = c("(a)", "(b)", "(c)", "(d)"),
+                      font.label = list(size = 14), 
+                      hjust = c(-3.5,-0.7,-3.5, -0.7),
+                    heights = c(1, 1.5),
+                      ncol = 2, nrow = 2#, align = "hv"
+                    )
+Graphs
+
+# ggsave(plot = Graphs, dpi = 600, width = 12, height = 10,
+#        filename = "Elasticity_ParamsYr1.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = Graphs, dpi = 600, width = 12, height = 10,
+#        filename = "Elasticity_ParamsYr1.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+```
+
+
+Make supplemental figure with all the elasticities for all years
+```{r}
+# change facet labels
+PopFacet <- c("Bayfield" = "Population 1", "Fanshawe" = "Population 3", "Ilderton"= "Population 4", "RBG" = "Population 6",
+              "1" = "2022", "2" = "2023", "3" = "2024")
+# change facet labels
+PopFacet <- c("Bayfield" = "Bayfield", "Fanshawe" = "Fanshawe", "Ilderton"= "Ilderton", "RBG" = "RBG",
+              "1" = "2022", "2" = "2023", "3" = "2024")
+
+# Make full figure
+elas.fig.all <- ltre_lambda %>% 
+  filter(version != "original") %>%
+  #filter(Year_t == 1) %>%
+  ggplot(aes(x = version, y = elasticity)) +
+  geom_bar(stat = "identity", fill = "darkgray")+
+  labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
+  facet_grid(Year_t ~ Population, labeller = as_labeller(PopFacet)) +
+  geom_hline(yintercept = 0) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  theme(axis.text.x = element_text(angle = 50, vjust = 1, hjust=1)) +
+  theme(strip.background = element_blank()) +
+  theme(strip.text = element_text(hjust = 0, size = 12)) +
+  #font size
+  theme(text = element_text(size = 14))  
+
+elas.fig.all
+
+# ggsave(plot = elas.fig.all, dpi = 600, width = 12, height = 6,
+#        filename = "Elasticity_Params_AllYr.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = elas.fig.all, dpi = 600, width = 12, height = 6,
+#        filename = "Elasticity_Params_AllYr.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+```
+
+# Simulations
+
+code from: https://github.com/jloesberg/Primula/blob/main/scripts/primula_IPM.rmd
+
+These simulations are bootstrapped, so I need to reload the bootstrapped
+ model (params_list, functions) from above, rather than the deterministic
+ versions.
+
+## Seedling Survival
+
+```{r}
+# Probability a seedling survives
+Estab <- est.intercepts
+
+bigmatrix <- function(params_list, mat.size, Estab){
+  n <- mat.size #matrix size
+  L <- min.size #lower integration limit
+  U <- max.size #upper integration limit
+ 
+  h <- (U - L)/n #Bin size
+  b <- L + c(0:n) * h #Lower boundaries 
+  y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+  # y is the mesh points of the matrix
+  
+  # Fertility matrix
+  Fmat<-matrix(0,(n+3),(n+3))
+  
+  # Fecundity
+  
+  #Seedlings this year
+  Fmat[3,4:(n+3)] <- Prob_Germ_1 * F_z(y, Year_t, params_list) + #seedlings this years seed
+    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
+  
+  #Seedbank with t-1 and t-2 seeds
+  Fmat[1,4:(n+3)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  Fmat[2,4:(n+3)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
+  
+  # Growth/survival transition matrix
+  Tmat<-matrix(0,(n+3),(n+3))
+  
+  # probability a seed stays in the seedbank
+  Tmat[2,1] <- 1 - Prob_Germ_1 * Prob_Surv_Seed
+  
+  # probability seed germinates after 2 years
+  Tmat[3,1] <- Prob_Germ_2 * Prob_Surv_Seed
+  
+  # probability seed germinates fresh
+  Tmat[3,2] <- Prob_Germ_1
+  
+  # probability a seedling establishes as adult
+  Tmat[4:(n+3),3] <- Estab * Se_z(y, params_list)
+  
+  # survival and growth
+  Tmat[4:(n+3),4:(n+3)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
+  
+  # Full kernel -- adds two kernels built
+  IPMmat <- Fmat + Tmat
+  
+  #out_matrix <- list(IPMmat = IPMmat, Fmat = Fmat, Tmat = Tmat, meshpts = y)
+  
+  out_lamb <- data.frame(lambda = lambda(IPMmat))
+  #return(out_matrix) #outputs matrices
+  return(out_lamb) #output lambda
+}
+
+# range of seedling survival, 200 samples
+# from 0 to 0.5
+prob_values =  seq(0.000, 0.5, .01)
+
+# Create an empty list to store the results
+results_list <- list()
+
+# Loop through each value
+for (prob_value in prob_values) {
+  # Call the bigmatrix function with the current prob_value
+  
+  result <- lapply(X = params_list, FUN = bigmatrix, mat.size = mat.size, Estab = prob_value)
+  
+  # Add the result to the list with an identifier
+  results_list[[as.character(prob_value)]] <- result
+}
+
+# saveRDS(results_list, file = "~/Research/Data/IPM_Formatted_STYL/Output/SeedlingSurvSim.rds")
+results_list <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/SeedlingSurvSim.rds")
+
+
+# first make an empty list
+datalist <- vector(mode = "list", length = 51)
+
+# make a loop to extract values
+for(i in 1:51){
+  SeedSurv_lambda_a <- do.call(rbind, results_list[[i]])
+  SeedSurv_lambda_a <- tibble::rownames_to_column(SeedSurv_lambda_a, "Prob_Surv_Seed")
+  SeedSurv_lambda_a$Prob_Surv_Seed <- prob_values[i]
+  SeedSurv_lambda_a$Pop <- c(rep(1, 3000), rep(2, 3000), rep(3, 3000), rep(4, 3000))
+  SeedSurv_lambda_a$Year <- rep(c(1, 2, 3), times = 4000)
+  SeedSurv_lambda_a <- SeedSurv_lambda_a %>%
+    # use the first two groups to split by population and year
+    group_by(Pop, Year,###
+             Prob_Surv_Seed) %>%
+    summarise(mean = mean(lambda),
+              LCI = quantile(lambda, probs = 0.025),
+              UCI = quantile(lambda, probs = 0.975))
+  datalist[[i]] <- SeedSurv_lambda_a
+}
+# Extract dataframes and rbind them
+SeedSurv_lambda <- bind_rows(datalist)
+
+
+# Fix pop names and years if needed
+SeedSurv_lambda <- SeedSurv_lambda %>%
+    mutate(Pop = case_when(Pop == 1 ~ "Bayfield",
+                                Pop == 2 ~ "Fanshawe",
+                                Pop == 3 ~ "Ilderton",
+                                Pop == 4 ~ "RBG"),
+         Year = case_when(Year == 1 ~ 2022,
+                            Year == 2 ~ 2023,
+                            Year == 3 ~ 2024))
+
+Obs_lambda <- SeedSurv_lambda %>%
+  filter(Prob_Surv_Seed > 0.18) %>%
+  filter(Prob_Surv_Seed < 0.20)
+
+# Combined all  -- have to comment out group_by in all the SeedSurv dataframes
+p <- ggplot(SeedSurv_lambda %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), aes(x = Prob_Surv_Seed, y = mean)) +
+  geom_line(color = "black", linewidth = 1) +
+  geom_ribbon(SeedSurv_lambda %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), mapping = aes(ymin = LCI, ymax = UCI), alpha = 0.3) +
+  # observed value point
+  geom_point(Obs_lambda %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), mapping = aes(x = Prob_Surv_Seed, y = mean), color = "darkblue", size = 3) +
+  # lambda of 1 line
+  geom_hline(yintercept = 1, color = "red", linetype = 2) +
+  labs(x = "Seedling Establishment (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
+  #facet_grid(Pop ~ Year, scales = "free") +
+  theme_classic() +
+  theme(text = element_text(size = 16))
+p
+# ggsave(plot = p, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+#        filename = "Seedling_Surv_Sim.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = p, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+#        filename = "Seedling_Surv_Sim.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+
+# Make separate panels for each year/pop combination for the supplemental
+SeedSurv_lambda2 <- SeedSurv_lambda %>%
+  mutate(Pop = case_when(Pop == "Bayfield" ~ "1",
+                         Pop == "Fanshawe" ~ "3",
+                         Pop == "Ilderton" ~ "4",
+                         Pop == "RBG" ~ "6",
+                         TRUE ~ NA_character_))
+
+pAll <- ggplot(SeedSurv_lambda %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), aes(x = Prob_Surv_Seed, y = mean)) +
+  geom_line(color = "black", linewidth = 1) +
+  geom_ribbon(SeedSurv_lambda2 %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), mapping = aes(ymin = LCI, ymax = UCI), alpha = 0.3) +
+  # observed value point
+  geom_point(Obs_lambda %>%
+              # mutate(Pop = case_when(Pop == "Bayfield" ~ "1",
+              #                        Pop == "Fanshawe" ~ "3",
+              #                        Pop == "Ilderton" ~ "4",
+              #                        Pop == "RBG" ~ "6",
+              #                        TRUE ~ NA_character_)) %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), mapping = aes(x = Prob_Surv_Seed, y = mean), color = "darkblue", size = 3) +
+  # lambda of 1 line
+  geom_hline(yintercept = 1, color = "red", linetype = 2) +
+  labs(x = "Seedling Establishment (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
+  facet_grid(Pop ~ Year, scales = "free_y") +
+  theme_classic() +
+  theme(text = element_text(size = 16)) +
+  theme(strip.background = element_blank())
+
+pAll
+
+# ggsave(plot = pAll, dpi = 600, width = 10, height = 8, # was 12w x 6 h
+#        filename = "Seedling_Surv_Sim_Split.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = pAll, dpi = 600, width = 10, height = 8, # was 12w x 6 h
+#        filename = "Seedling_Surv_Sim_Split.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+
+```
+
+## Seedling Germination
+```{r}
+# Probability a seedling survives
+Prob_Germ_1
+
+Prob_Germ_1_Orig <- Prob_Germ_1
+
+bigmatrix <- function(params_list, mat.size, Prob_Germ_1){
+  n <- mat.size #matrix size
+  L <- min.size #lower integration limit
+  U <- max.size #upper integration limit
+ 
+  h <- (U - L)/n #Bin size
+  b <- L + c(0:n) * h #Lower boundaries 
+  y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
+  # y is the mesh points of the matrix
+  
+  # Fertility matrix
+  Fmat<-matrix(0,(n+3),(n+3))
+  
+  # Fecundity
+  
+  #Seedlings this year
+  Fmat[3,4:(n+3)] <- Prob_Germ_1 * F_z(y, Year_t, params_list) + #seedlings this years seed
+    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    Prob_Germ_2 * (1 - Prob_Germ_1_Orig) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
+  
+  #Seedbank with t-1 and t-2 seeds
+  Fmat[1,4:(n+3)] <- (1 - Prob_Germ_1_Orig) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  Fmat[2,4:(n+3)] <- (1 - Prob_Germ_1_Orig - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
+  
+  # Growth/survival transition matrix
+  Tmat<-matrix(0,(n+3),(n+3))
+  
+  # probability a seed stays in the seedbank
+  Tmat[2,1] <- 1 - Prob_Germ_1 * Prob_Surv_Seed
+  
+  # probability seed germinates after 2 years
+  Tmat[3,1] <- Prob_Germ_2 * Prob_Surv_Seed
+  
+  # probability seed germinates fresh
+  Tmat[3,2] <- Prob_Germ_1
+  
+  # probability a seedling establishes as adult
+  Tmat[4:(n+3),3] <- Sur_z1(params_list) * Se_z(y, params_list)
+  
+  # survival and growth
+  Tmat[4:(n+3),4:(n+3)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
+  
+  # Full kernel -- adds two kernels built
+  IPMmat <- Fmat + Tmat
+  
+  #out_matrix <- list(IPMmat = IPMmat, Fmat = Fmat, Tmat = Tmat, meshpts = y)
+  
+  out_lamb <- data.frame(lambda = lambda(IPMmat))
+  #return(out_matrix) #outputs matrices
+  return(out_lamb) #output lambda
+}
+
+# range of seedling germination survival
+# from 0 to 0.5
+prob_values =  seq(0.000, 0.5, 0.01)
+
+# Create an empty list to store the results
+results_list <- list()
+
+# Loop through each value
+for (prob_value in prob_values) {
+  
+  # Call the bigmatrix function with the current prob_value
+  result <- lapply(X = params_list, FUN = bigmatrix, mat.size = mat.size, Prob_Germ_1 = prob_value)
+  
+  # Add the result to the list with an identifier
+  results_list[[as.character(prob_value)]] <- result
+}
+
+# saveRDS(results_list, file = "~/Research/Data/IPM_Formatted_STYL/Output/SeedlingGermSim.rds")
+
+ results_list <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/SeedlingGermSim.rds")
+
+ #add in the values used:
+ 
+ # first make an empty list
+datalist <- vector(mode = "list", length = 51)
+
+# make a loop to extract values
+for(i in 1:51){
+  SeedSurv_lambda_a <- do.call(rbind, results_list[[i]])
+  SeedSurv_lambda_a <- tibble::rownames_to_column(SeedSurv_lambda_a, "Prob_Surv_Seed")
+  SeedSurv_lambda_a$Prob_Surv_Seed <- prob_values[i]
+  SeedSurv_lambda_a$Pop <- c(rep(1, 3000), rep(2, 3000), rep(3, 3000), rep(4, 3000))
+  SeedSurv_lambda_a$Year <- rep(c(1, 2, 3), times = 4000)
+  SeedSurv_lambda_a <- SeedSurv_lambda_a %>%
+    # use the first two groups to split by population and year
+    group_by(#Pop, Year,###
+             Prob_Surv_Seed) %>%
+    summarise(mean = mean(lambda),
+              LCI = quantile(lambda, probs = 0.025),
+              UCI = quantile(lambda, probs = 0.975))
+  datalist[[i]] <- SeedSurv_lambda_a
+}
+# Extract dataframes and rbind them
+SeedSurv_lambda <- bind_rows(datalist)
+
+# Fix pop names and years if needed
+#SeedSurv_lambda <- SeedSurv_lambda %>%
+#    mutate(Pop = case_when(Pop == 1 ~ "Bayfield",
+#                                Pop == 2 ~ "Fanshawe",
+#                                Pop == 3 ~ "Ilderton",
+#                                Pop == 4 ~ "RBG"),
+#         Year = case_when(Year == 1 ~ 2022,
+#                            Year == 2 ~ 2023,
+#                            Year == 3 ~ 2024))
+
+Obs_lambda <- SeedSurv_lambda %>%
+  filter(Prob_Surv_Seed > 0.04) %>%
+  filter(Prob_Surv_Seed < 0.06) %>%
+  mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100)
+
+
+###########################################
+########################################
+p2 <- ggplot(SeedSurv_lambda %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), aes(x = Prob_Surv_Seed, y = mean)) +
+  geom_line(color = "black", linewidth = 1) +
+  geom_ribbon(SeedSurv_lambda %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), mapping = aes(ymin = LCI, ymax = UCI), alpha = 0.3) +
+  # observed value point
+  geom_point(Obs_lambda, mapping = aes(x = Prob_Surv_Seed, y = mean), color = "darkblue", size = 3) +
+  # lambda of 1 line
+  geom_hline(yintercept = 1, color = "red", linetype = 2) +
+  labs(x = "Seedling Germination (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
+  #facet_grid(Pop ~ Year, scales = "free") +
+  theme_classic() +
+  theme(text = element_text(size = 16))
+
+p2
+
+# ggsave(plot = p2, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+#        filename = "Seedling_Germ_Sim.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = p2, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+#        filename = "Seedling_Germ_Sim.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+
+# Make a figure separating the year/pop combinations for the supplemental
+# Just requires adding to the group_by for each SeedSurv dataframe
+
+SeedSurv_lambda2 <- SeedSurv_lambda %>%
+  #mutate(Pop = case_when(Pop == "Bayfield" ~ "1",
+  #                       Pop == "Fanshawe" ~ "3",
+  #                       Pop == "Ilderton" ~ "4",
+  #                       Pop == "RBG" ~ "6",
+  #                       TRUE ~ NA_character_)) %>%
+  mutate(Pop = case_when(Pop == "1" ~ "Bayfield",
+                         Pop == "2" ~ "Fanshawe",
+                         Pop == "3" ~ "Ilderton",
+                         Pop == "4" ~ "RBG",
+                         TRUE ~ NA_character_),
+         Year = case_when(Year == "1" ~ "2022",
+                          Year == "2" ~ "2023",
+                          Year == "3" ~ "2024"))
+
+
+pAll <- ggplot(SeedSurv_lambda2 %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), aes(x = Prob_Surv_Seed, y = mean)) +
+  geom_line(color = "black", linewidth = 1) +
+  geom_ribbon(SeedSurv_lambda2 %>%
+              # need to make a percent!
+              mutate(Prob_Surv_Seed = Prob_Surv_Seed * 100), mapping = aes(ymin = LCI, ymax = UCI), alpha = 0.3) +
+  # observed value point
+  geom_point(Obs_lambda %>%
+               mutate(Pop = case_when(Pop == "1" ~ "Bayfield",
+                         Pop == "2" ~ "Fanshawe",
+                         Pop == "3" ~ "Ilderton",
+                         Pop == "4" ~ "RBG",
+                         TRUE ~ NA_character_),
+         Year = case_when(Year == "1" ~ "2022",
+                          Year == "2" ~ "2023",
+                          Year == "3" ~ "2024"))
+             , mapping = aes(x = Prob_Surv_Seed, y = mean), color = "darkblue", size = 3) +
+  # lambda of 1 line
+  geom_hline(yintercept = 1, color = "red", linetype = 2) +
+  labs(x = "Seedling Germination (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
+  facet_grid(Pop ~ Year, scales = "free_y") +
+  theme_classic() +
+  theme(text = element_text(size = 16)) +
+  theme(strip.background = element_blank())
+
+pAll
+
+# ggsave(plot = pAll, dpi = 600, width = 10, height = 8, # was 12w x 6 h
+#        filename = "Seedling_Germ_Sim_Split.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = pAll, dpi = 600, width = 10, height = 8, # was 12w x 6 h
+#        filename = "Seedling_Germ_Sim_Split.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+```
+
+Make a figure with the two simulations
+This is why they are p and p2
+```{r}
+Graphs <- ggarrange(p, p2,
+                    labels = c("(a)", "(b)"),
+                    font.label = list(size = 14), 
+                    hjust = c(-4.0, -4.0),
+                    ncol = 1, nrow = 2, align = "v")
+Graphs
+
+# ggsave(plot = Graphs, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+#        filename = "Combined_Sims.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = Graphs, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+#        filename = "Combined_Sims.pdf",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+```
+
