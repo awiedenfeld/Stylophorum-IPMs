@@ -536,7 +536,7 @@ Plot vital rates (probability of survival, growth, probability of
 ```{r echo=FALSE}
 #Make a vector of population names
 Population <- c("Bayfield", "Fanshawe", "Ilderton", "RBG")
-PopCol <- c("#E69F00", "#56B4E9", "#009E73","#0072B2")
+PopCol <- c("#D55E00", "#0072B2", "#F0E442","#009E73")
 pch_names <- c(1:4)
 
 ## Growth
@@ -594,10 +594,10 @@ newdatR$Flowering = predict(fitR, newdata=newdatR, type="response")
 p2 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Flowering, col = Population)) +
   geom_point(alpha = 0.5) +
   scale_color_manual(values = PopCol) +
-  geom_line(data = newdatB, aes(x = Height_cm_t, y = Flowering), col = "#E69F00", linetype = 1, linewidth = 1) +
-  geom_line(data = newdatF, aes(x = Height_cm_t, y = Flowering), col = "#56B4E9", linetype = 1, linewidth = 1) +
-  geom_line(data = newdatI, aes(x = Height_cm_t, y = Flowering), col = "#009E73", linetype = 1, linewidth = 1) +
-  geom_line(data = newdatR, aes(x = Height_cm_t, y = Flowering), col = "#0072B2", linetype = 1, linewidth = 1) +
+  geom_line(data = newdatB, aes(x = Height_cm_t, y = Flowering), col = "#D55E00", linetype = 1, linewidth = 1) +
+  geom_line(data = newdatF, aes(x = Height_cm_t, y = Flowering), col = "#0072B2", linetype = 1, linewidth = 1) +
+  geom_line(data = newdatI, aes(x = Height_cm_t, y = Flowering), col = "#F0E442", linetype = 1, linewidth = 1) +
+  geom_line(data = newdatR, aes(x = Height_cm_t, y = Flowering), col = "#009E73", linetype = 1, linewidth = 1) +
   labs(x = "Height in year t (cm)", y = "Probability of Flowering Year t+1") +
   xlim(0, 90) +
   theme_classic() + 
@@ -1822,7 +1822,6 @@ GrowthData
 
 Code from:
 https://github.com/ipmbook/first-edition/blob/master/Rcode/c4/Ungulate%20Pert%20Lambda%20Calc.R
-https://github.com/ipmbook/first-edition/blob/master/Rcode/c4/Ungulate%20Pert%20Lambda%20Calc.R
 
 ## Kernel Elasticity
 
@@ -1997,13 +1996,18 @@ par(mfrow = c(4,3)) # so each row is a population
 
 par(mar=c(1,4,1,1))
 image(y,y,t(K.elas[[1]]),xlab="",ylab="Size (t+1)", col = terrain.colors(30, rev = T), xaxt='n')
+text(45,84, paste("2022-2023"))
+text(11,85, paste("Bayfield"))
 par(mar=c(1,1,1,1))
 image(y,y,t(K.elas[[2]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
+text(45,84, paste("2023-2024"))
 par(mar=c(1,1,1,1))
 image(y,y,t(K.elas[[3]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
+text(45,84, paste("2024-2025"))
 
 par(mar=c(1,4,1,1))
 image(y,y,t(K.elas[[4]]),xlab="",ylab="Size (t+1)", col = terrain.colors(30, rev = T), xaxt='n')
+text(13,85, paste("Fanshawe"))
 par(mar=c(1,1,1,1))
 image(y,y,t(K.elas[[5]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
 par(mar=c(1,1,1,1))
@@ -2011,6 +2015,7 @@ image(y,y,t(K.elas[[6]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xax
 
 par(mar=c(1,4,1,1))
 image(y,y,t(K.elas[[7]]),xlab="",ylab="Size (t+1)", col = terrain.colors(30, rev = T), xaxt='n')
+text(11,85, paste("Ilderton"))
 par(mar=c(1,1,1,1))
 image(y,y,t(K.elas[[8]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
 par(mar=c(1,1,1,1))
@@ -2018,6 +2023,7 @@ image(y,y,t(K.elas[[9]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xax
 
 par(mar=c(4,4,1,1))
 image(y,y,t(K.elas[[10]]),xlab="Size (t)",ylab="Size (t+1)", col = terrain.colors(30, rev = T))
+text(8,85, paste("RBG"))
 par(mar=c(4,1,1,1))
 image(y,y,t(K.elas[[11]]),xlab="Size (t)",ylab="", col = terrain.colors(30, rev = T), yaxt="n")
 par(mar=c(4,1,1,1))
@@ -2065,12 +2071,12 @@ data4$Year <- as.factor(data4$Year)
 p <- ggplot(data=data4 %>%
               filter(Population == "Bayfield") %>%
               filter(y > 1.5), aes(x=y, y=StableSize, group=Year)) +
-  geom_line(aes(col = Year), size = 1.2) +
-  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73")) +
+  geom_line(aes(linetype = Year), col = "#D55E00", size = 1.2) +
   labs(y = "Relative Size Distribution", x = "Height (cm), Year t") +
   theme_classic() +
   # Increase font size of population names
-  theme(strip.text = element_text(size = 20)) +
+  theme(strip.text = element_text(size = 16)) +
+    facet_wrap(~Year) +
   #add axes on all graphs, instead of just bottom and left ones
   theme(axis.line=element_line()) +
   scale_x_continuous(limits=c(0,90)) +
@@ -2078,16 +2084,18 @@ p <- ggplot(data=data4 %>%
   theme(axis.title.x = element_blank(),
         axis.text.x=element_blank()) +
   #move the legend
-  theme(legend.position = "none")
+  theme(legend.position = "none") +
+  theme(strip.background = element_blank())
+
 p2 <- ggplot(data=data4 %>%
               filter(Population == "Fanshawe") %>%
               filter(y > 1.5), aes(x=y, y=StableSize, group=Year)) +
-  geom_line(aes(col = Year), size = 1.2) +
-  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73")) +
+  geom_line(aes(linetype = Year), col = "#0072B2",  size = 1.2) +
   labs(y = "Relative Size Distribution", x = "Height (cm), Year t") +
   theme_classic() +
   # Increase font size of population names
-  theme(strip.text = element_text(size = 20)) +
+  theme(strip.text = element_text(size = 16)) +
+    facet_wrap(~Year) +
   #add axes on all graphs, instead of just bottom and left ones
   theme(axis.line=element_line()) +
   scale_x_continuous(limits=c(0,90)) +
@@ -2097,15 +2105,16 @@ p2 <- ggplot(data=data4 %>%
   #move the legend
   theme(legend.position = "none") +
   theme(strip.background = element_blank())
+
 p3 <- ggplot(data=data4 %>%
               filter(Population == "Ilderton") %>%
               filter(y > 1.5), aes(x=y, y=StableSize, group=Year)) +
-  geom_line(aes(col = Year), size = 1.2) +
-  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73")) +
+  geom_line(aes(linetype = Year), col = "#F0E442", size = 1.2) +
   labs(y = "Relative Size Distribution", x = "Height (cm), Year t") +
   theme_classic() +
   # Increase font size of population names
-  theme(strip.text = element_text(size = 20)) +
+  theme(strip.text = element_text(size = 16)) +
+    facet_wrap(~Year) +
   #add axes on all graphs, instead of just bottom and left ones
   theme(axis.line=element_line()) +
   scale_x_continuous(limits=c(0,90)) +
@@ -2113,15 +2122,16 @@ p3 <- ggplot(data=data4 %>%
   #move the legend
   theme(legend.position = "none") +
   theme(strip.background = element_blank())
+
 p4 <- ggplot(data=data4 %>%
               filter(Population == "RBG") %>%
               filter(y > 1.5), aes(x=y, y=StableSize, group=Year)) +
-  geom_line(aes(col = Year), size = 1.2) +
-  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73")) +
+  geom_line(aes(linetype = Year), col = "#009E73", size = 1.2) +
   labs(y = "Relative Size Distribution", x = "Height (cm), Year t") +
   theme_classic() +
   # Increase font size of population names
-  theme(strip.text = element_text(size = 20)) +
+  theme(strip.text = element_text(size = 16)) +
+    facet_wrap(~Year) +
   #add axes on all graphs, instead of just bottom and left ones
   theme(axis.line=element_line()) +
   scale_x_continuous(limits=c(0,90)) +
@@ -2129,23 +2139,26 @@ p4 <- ggplot(data=data4 %>%
   theme(axis.title.y = element_blank(),
         axis.text.y=element_blank()) +
   # move the legend
-  theme(legend.position = c(0.85, 0.40)) +
+  theme(legend.position = "none") +# c(0.85, 0.40)) +
   theme(strip.background = element_blank())
 
 Graphs <- ggarrange(p,  p2,  p3,  p4,
-                      labels = c("(a)", "(b)", "(c)", "(d)"),
+                      labels = c("(a) Bayfield", "(b) Fanshawe", "(c) Ilderton", "(d) RBG"),
                     widths = c(1,1,1,1),
                       font.label = list(size = 11), 
-                      hjust = c(-3.5,-0.7,-3.5, -0.7),
+                      hjust = c(-0.5,-0.2, -0.7, -0.3),#c(-1.5,-0.7,-1.5, -0.7),
+                    vjust = c(0.2, 0.2, 0.2, 0.2),
                       #hjust = c(-1.5,-0.2,-0.2, -1.5, -0.2, -0.2),
-                      ncol = 2, nrow = 2, align = "h")
+                      ncol = 2, nrow = 2, align = "h") +
+  # add extra margin above all plots
+  theme(plot.margin = margin(1, 0, 0,0, "cm"))
 
 Graphs
 
 # save plot
-# ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
-#        filename = "StableSizeDist.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+ ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
+        filename = "StableSizeDist.png",
+        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
 #        filename = "StableSizeDist.pdf",
 #        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
@@ -2305,7 +2318,7 @@ exp(testdata$sim)
 # Yup, this is nearly the same for Bayfield!
 ```
 
-## Parameter-Level Sensitivity and Elasticity
+# Parameter-Level Elasticity
 
 all code from https://github.com/jloesberg/Primula/blob/main/scripts/primula_IPM.rmd
 
@@ -2577,7 +2590,7 @@ p <- ltre_lambda %>%
     filter(Year_t == 1) %>%
     filter(Population == "Bayfield") %>%
     ggplot(aes(x = version, y = elasticity)) +
-    geom_bar(stat = "identity", fill = "darkgray")+
+    geom_bar(stat = "identity", fill = "#D55E00")+
     labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
   scale_y_continuous(limits = c(-2.1, 0.7)) +
     geom_hline(yintercept = 0) +
@@ -2594,7 +2607,7 @@ p2 <- ltre_lambda %>%
     filter(Year_t == 1) %>%
     filter(Population == "Fanshawe") %>%
     ggplot(aes(x = version, y = elasticity)) +
-    geom_bar(stat = "identity", fill = "darkgray")+
+    geom_bar(stat = "identity", fill = "#0072B2")+
     labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
     theme(axis.text.x = element_text(angle = 0, hjust = 1)) +
     scale_y_continuous(limits = c(-2.1, 0.7)) +
@@ -2610,7 +2623,7 @@ p3 <- ltre_lambda %>%
     filter(Year_t == 1) %>%
     filter(Population == "Ilderton") %>%
     ggplot(aes(x = version, y = elasticity)) +
-    geom_bar(stat = "identity", fill = "darkgray")+
+    geom_bar(stat = "identity", fill = "#F0E442")+
     labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
     theme(axis.title = element_text(size = 14)) +
@@ -2628,7 +2641,7 @@ p4 <- ltre_lambda %>%
     filter(Year_t == 1) %>%
     filter(Population == "RBG") %>%
     ggplot(aes(x = version, y = elasticity)) +
-    geom_bar(stat = "identity", fill = "darkgray")+
+    geom_bar(stat = "identity", fill = "#009E73")+
     labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
       scale_y_continuous(limits = c(-1.8, 2)) +
@@ -2642,9 +2655,9 @@ p4 <- ltre_lambda %>%
   scale_x_discrete(expand = expansion(mult = c(0.1, 0.0)))
 
 Graphs <- ggarrange(p,  p2,  p3,  p4,
-                      labels = c("(a)", "(b)", "(c)", "(d)"),
+                      labels = c("(a) Bayfield", "(b) Fanshawe", "(c) Ilderton", "(d) RBG"),
                       font.label = list(size = 14), 
-                      hjust = c(-3.5,-0.7,-3.5, -0.7),
+                      hjust = c(-0.7, -0.2, -0.7, -0.3),#c(-3.5,-0.7,-3.5, -0.7),
                     heights = c(1, 1.5),
                       ncol = 2, nrow = 2#, align = "hv"
                     )
@@ -2672,10 +2685,11 @@ PopFacet <- c("Bayfield" = "Bayfield", "Fanshawe" = "Fanshawe", "Ilderton"= "Ild
 elas.fig.all <- ltre_lambda %>% 
   filter(version != "original") %>%
   #filter(Year_t == 1) %>%
-  ggplot(aes(x = version, y = elasticity)) +
-  geom_bar(stat = "identity", fill = "darkgray")+
+  ggplot(aes(x = version, y = elasticity, fill = Population)) +
+  geom_bar(stat = "identity")+
   labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
   facet_grid(Year_t ~ Population, labeller = as_labeller(PopFacet)) +
+  scale_fill_manual(values = c("#D55E00", "#0072B2", "#F0E442", "#009E73")) +
   geom_hline(yintercept = 0) +
   theme_classic() +
   theme(legend.position = "none") +
@@ -2683,7 +2697,7 @@ elas.fig.all <- ltre_lambda %>%
   theme(strip.background = element_blank()) +
   theme(strip.text = element_text(hjust = 0, size = 12)) +
   #font size
-  theme(text = element_text(size = 14))  
+  theme(text = element_text(size = 14)) 
 
 elas.fig.all
 

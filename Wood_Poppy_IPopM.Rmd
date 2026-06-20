@@ -947,6 +947,367 @@ endTime <- Sys.time(); endTime - startTime
 # saveRDS(out2, file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_R.rds")
 ```
 
+# Use model output
+```{r eval=FALSE, include=FALSE}
+# Load IPM output
+out2_B <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_B.rds")
+out2_D <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_D.rds")
+out2_F <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_F.rds")
+out2_I <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_I.rds")
+#out2_M <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_M.rds")
+out2_R <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPopM_Output_R.rds")
+
+```
+
+
+## IPM vs IPM
+Show Growth Rates for Both Model Types
+For this, need bootstrapped growth rates for IProjM loaded as well.
+
+Load Integral Projection Model output
+```{r}
+# Load IPM output
+lamb_lists <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/IPM_Lambda.rds")
+
+boot_lambda <- do.call(rbind, lamb_lists)
+
+boot_lambda[,2] <- c(rep(1, 3000), rep(2, 3000), rep(3, 3000), rep(4, 3000))
+boot_lambda[,3] <- rep(c(1, 2, 3), times = 4000)
+
+names(boot_lambda) <- c("lambda", "Population", "Year_t")
+str(boot_lambda)
+boot_lambda <- boot_lambda %>%
+  mutate(Population = case_when(Population == 1 ~ "Bayfield",
+                                Population == 2 ~ "Fanshawe",
+                                Population == 3 ~ "Ilderton",
+                                Population == 4 ~ "RBG"),
+         Year_t = case_when(Year_t == 1 ~ 2022,
+                            Year_t == 2 ~ 2023,
+                            Year_t == 3 ~ 2024))
+boot_lambda$Population <- as.factor(boot_lambda$Population)
+boot_lambda$Year_t <- as.factor(boot_lambda$Year_t)
+
+# Mean and 95% CI
+## Used for comparison with IPopM
+data1 <- boot_lambda %>%
+  group_by(Population, Year_t) %>%
+  summarise(mean = mean(lambda),
+            Q2.5 = quantile(lambda, probs = 0.025),
+            Q97.5 = quantile(lambda, probs = 0.975))
+
+p <- ggplot(data1, aes(x = Year_t, y = mean)) +
+  geom_errorbar(aes(ymin = Q2.5, ymax = Q97.5), width = 0.1) +
+    geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  geom_line() +
+  facet_wrap(~Population) +
+  geom_point() +
+  theme_classic()
+p
+```
+
+
+Organize and plot
+```{r}
+GrowthData_B <- (out2_B$q50$ann.growth.rate)
+GrowthData_D <- (out2_D$q50$ann.growth.rate)
+GrowthData_F <- (out2_F$q50$ann.growth.rate)
+GrowthData_I <- (out2_I$q50$ann.growth.rate)
+#GrowthData_M <- (out2_M$q50$ann.growth.rate)
+GrowthData_R <- (out2_R$q50$ann.growth.rate)
+
+GrowthData_Bl <- (out2_B$q2.5$ann.growth.rate)
+GrowthData_Dl <- (out2_D$q2.5$ann.growth.rate)
+GrowthData_Fl <- (out2_F$q2.5$ann.growth.rate)
+GrowthData_Il <- (out2_I$q2.5$ann.growth.rate)
+#GrowthData_Ml <- (out2_M$q2.5$ann.growth.rate)
+GrowthData_Rl <- (out2_R$q2.5$ann.growth.rate)
+
+GrowthData_Bu <- (out2_B$q97.5$ann.growth.rate)
+GrowthData_Du <- (out2_D$q97.5$ann.growth.rate)
+GrowthData_Fu <- (out2_F$q97.5$ann.growth.rate)
+GrowthData_Iu <- (out2_I$q97.5$ann.growth.rate)
+#GrowthData_Mu <- (out2_M$q97.5$ann.growth.rate)
+GrowthData_Ru <- (out2_R$q97.5$ann.growth.rate)
+
+
+Population <- rep("Bayfield", 55)
+GrowthData_B <- data.frame(GrowthData_B, Population, GrowthData_Bl, GrowthData_Bu)
+names(GrowthData_B) <- c("GrowthRate", "Population", "LCI","UCI")
+GrowthData_B$Year <- seq(from = 2020, to = 2074, by = 1)
+
+Population <- rep("Denfield", 55)
+GrowthData_D <- data.frame(GrowthData_D, Population, GrowthData_Dl, GrowthData_Du)
+names(GrowthData_D) <- c("GrowthRate", "Population", "LCI","UCI")
+GrowthData_D$Year <- seq(from = 2020, to = 2074, by = 1)
+
+Population <- rep("Fanshawe", 55)
+GrowthData_F <- data.frame(GrowthData_F, Population, GrowthData_Fl, GrowthData_Fu)
+names(GrowthData_F) <- c("GrowthRate", "Population", "LCI","UCI")
+GrowthData_F$Year <- seq(from = 2020, to = 2074, by = 1)
+
+Population <- rep("Ilderton", 55)
+GrowthData_I <- data.frame(GrowthData_I, Population, GrowthData_Il, GrowthData_Iu)
+names(GrowthData_I) <- c("GrowthRate", "Population", "LCI","UCI")
+GrowthData_I$Year <- seq(from = 2020, to = 2074, by = 1)
+
+
+#Population <- rep("Meadowlily", 53)
+#GrowthData_M <- data.frame(GrowthData_M, Population, GrowthData_Ml, GrowthData_Mu)
+#names(GrowthData_M) <- c("GrowthRate", "Population", "LCI","UCI")
+#GrowthData_M$Year <- seq(from = 2020, to = 2072, by = 1)
+#GrowthData_M <- GrowthData_M %>%
+#  as.data.frame() %>%
+#  add_row(GrowthRate = NA, Population = "Meadowlily", LCI = NA, UCI = NA, Year = 2073) %>%
+#    add_row(GrowthRate = NA, Population = "Meadowlily", LCI = NA, UCI = NA, Year = 2074) %>%
+#    add_row(GrowthRate = NA, Population = "Meadowlily", LCI = NA, UCI = NA, Year = 2075) %>%
+#    add_row(GrowthRate = NA, Population = "Meadowlily", LCI = NA, UCI = NA, Year = 2076)
+
+Population  <- rep("RBG", 55)
+GrowthData_R <- data.frame(GrowthData_R, Population, GrowthData_Rl, GrowthData_Ru)
+names(GrowthData_R) <- c("GrowthRate", "Population", "LCI","UCI")
+GrowthData_R$Year <- seq(from = 2020, to = 2074, by = 1)
+
+GrowthData <- rbind(GrowthData_B, GrowthData_D, GrowthData_F, GrowthData_I, GrowthData_R)
+
+PopSize <- as.data.frame(GrowthData)
+PopSize <- PopSize %>%
+  filter(!is.na(GrowthRate))
+
+
+##########################################################
+# both!!
+
+names(data1) <- c("Population", "Year", "GrowthRate", "LCI", "UCI")
+data1$ModelType <- "IProjM"
+data1$Year <- as.numeric(data1$Year)
+data1 <- data1 %>%
+  mutate(Year = case_when(Year == 1 ~ 2022,
+                          Year == 2 ~ 2023,
+                          Year == 3 ~ 2024))
+
+GrowthData$ModelType <- "IPopM"
+
+data2 <- rbind(data1, GrowthData)
+data2 <- data2 %>%
+  filter(Year < 2025)
+
+data2$ModelType <- factor(data2$ModelType, levels = c("IPopM","IProjM"))
+
+data2 <- data2 %>%
+  mutate(Population = case_when(Population == "RBG" ~ "RBG - Transplanted",
+                                TRUE ~ Population))
+
+data2 <- data2 %>%
+ mutate(GrowthRate = case_when(Population == "Meadowlily" & Year > 2022 ~ NA,
+                               TRUE ~ GrowthRate),
+        LCI = case_when(Population == "Meadowlily" & Year > 2022 ~ NA,
+                               TRUE ~ LCI),
+        UCI = case_when(Population == "Meadowlily" & Year > 2022 ~ NA,
+                               TRUE ~ UCI))
+
+# Jitter the points
+data3 <- data2 %>%
+  mutate(Year = case_when(ModelType == "IPopM" ~ Year + 0.25,
+                        TRUE ~ Year))
+```
+
+Add count-based
+```{r}
+Counts <- read.csv("~/Research/Data/Count_Data.csv")
+
+Wood_Poppy_Vertical <- read.csv("~/Research/Data/IPM_Formatted_STYL/Wood_Poppy_Vertical.csv")
+
+Counts <- Counts %>%
+  filter(Species == "Stylophorum") %>%
+#  mutate(Count = case_when(Population == "Ilderton" & Year > 2021 ~ NA_real_,
+#                           TRUE ~ Count)) %>%
+  dplyr::select(-Species)
+
+
+#Quadrats <- Wood_Poppy_Vertical %>%
+#  filter(Population == "Ilderton") %>%
+#  filter(Status == "Alive") %>%
+#  group_by(Population, Year) %>%
+#  summarise(Count = n())
+
+
+CountLambda <- as.data.frame(rbind(Counts))#, Quadrats))
+
+CountLambda <- CountLambda %>%
+  filter(!is.na(Count)) %>%
+  arrange(Population, Year) %>%
+  group_by(Population) %>%
+  mutate(GrowthRate = Count / lag(Count)) %>%
+  mutate(Year = Year - 1.25) %>%
+  ungroup() %>%
+  mutate(ModelType = "Count") %>%
+  mutate(LCI = NA_real_,
+         UCI = NA_real_) %>%
+  mutate(Population = case_when(Population == "RBG" ~ "RBG - Transplanted",
+                                TRUE ~ Population)) %>%
+  dplyr::select(-Count)
+
+# Ilderton 2021-202
+#CountLambda[21, 3] <- NA
+# Denfield
+CountLambda[12, 3] <- NA
+CountLambda[11, 3] <- NA
+
+
+head(CountLambda)
+
+AllData <- rbind(data3, CountLambda)
+```
+
+
+Plot
+```{r}
+# make labels
+PopFacet <- c("Bayfield" = "(a) Bayfield", "Denfield" = "(b) Denfield", "Fanshawe" = "(c) Fanshawe", "Ilderton" = "(d) Ilderton", "RBG - Transplanted" = "(e) RBG")
+
+p <- ggplot(AllData %>%
+              filter(Population != "Meadowlily"), aes(x = Year, y = GrowthRate, color = ModelType, shape = ModelType)) +
+  geom_errorbar(aes(ymin = LCI, ymax = UCI), width = 0.6) +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  scale_color_manual(values = c("gray25", "#6A0F8E","#4ECDC4"), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  scale_shape_manual(values = c(8,16,17), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  # show every x axis value
+  scale_x_continuous(breaks = seq(2020, 2024, by = 1)) +
+  #geom_line() +
+  facet_wrap(~Population, labeller = as_labeller(PopFacet)) + #, scales = "free_y") +
+  geom_point(size = 3) +
+  theme_classic() +
+  theme(legend.position = c(0.08, 0.1)) +#c(0.15, 0.1)) + #c(0.15, 0.92)) +
+  theme(strip.background = element_blank()) +
+  theme(strip.text = element_text(hjust = 0)) +
+  # adds axes to each facet
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
+  theme(strip.text = element_text( size = 14, color = "black")) +
+  theme(axis.text = element_text(size = 14)) +
+  theme(legend.title = element_text(size=10), #change legend title font size
+        legend.text = element_text(size=10))
+p
+#############################
+# Make with multiple panels
+p <- ggplot(AllData %>%
+              filter(Population == "Bayfield"), aes(x = Year, y = GrowthRate, color = ModelType, shape = ModelType)) +
+  geom_errorbar(aes(ymin = LCI, ymax = UCI), width = 0.6) +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  scale_color_manual(values = c("lightgray", "#6A0F8E","#4ECDC4"), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  scale_shape_manual(values = c(8,16,17), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  #geom_line() +
+  #facet_wrap(~Population) + #, scales = "free_y") +
+  geom_point(size = 3) +
+  theme_classic() +
+  scale_y_continuous(limits = c(0, 1.8)) +
+  theme(legend.position = "none") + #c(0.15, 0.92)) +
+  theme(axis.text = element_text(size = 14)) +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank())
+
+p
+
+
+p2 <- ggplot(AllData %>%
+               filter(Population == "Denfield"), aes(x = Year, y = GrowthRate, color = ModelType, shape = ModelType)) +
+  geom_errorbar(aes(ymin = LCI, ymax = UCI), width = 0.6) +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  scale_color_manual(values = c("lightgray", "#6A0F8E","#4ECDC4"), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  scale_shape_manual(values = c(8,16,17), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  
+  #geom_line() +
+  #facet_wrap(~Population) + #, scales = "free_y") +
+  geom_point(size = 3) +
+  theme_classic() +
+  scale_y_continuous(limits = c(0, 1.8)) +
+  theme(legend.position = "none") + #c(0.15, 0.92)) +
+  theme(axis.text = element_text(size = 14)) +
+  theme(axis.title = element_blank(),
+        axis.text=element_blank())
+p3 <- ggplot(AllData %>%
+               filter(Population == "Fanshawe"), aes(x = Year, y = GrowthRate, color = ModelType, shape = ModelType)) +
+  geom_errorbar(aes(ymin = LCI, ymax = UCI), width = 0.6) +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  scale_color_manual(values = c("lightgray", "#6A0F8E","#4ECDC4"), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  scale_shape_manual(values = c(8,16,17), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  
+  #geom_line() +
+  #facet_wrap(~Population) + #, scales = "free_y") +
+  geom_point(size = 3) +
+  theme_classic() +
+  scale_y_continuous(limits = c(0, 1.8)) +
+  theme(legend.position = "none") + #c(0.15, 0.92)) +
+  theme(axis.text = element_text(size = 14)) +
+  theme(axis.title.y = element_blank(),
+        axis.text.y=element_blank())
+p4 <- ggplot(AllData %>%
+               filter(Population == "Ilderton"), aes(x = Year, y = GrowthRate, color = ModelType, shape = ModelType)) +
+  geom_errorbar(aes(ymin = LCI, ymax = UCI), width = 0.6) +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  scale_color_manual(values = c("lightgray", "#6A0F8E","#4ECDC4"), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  scale_shape_manual(values = c(8,16,17), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  
+  #geom_line() +
+  #facet_wrap(~Population) + #, scales = "free_y") +
+  geom_point(size = 3) +
+  theme_classic() +
+  scale_y_continuous(limits = c(0, 1.8)) +
+  theme(legend.position = c(0.45, 0.2)) + #c(0.15, 0.92)) +
+  theme(axis.text = element_text(size = 14)) +
+  theme(legend.title = element_text(size=10), #change legend title font size
+        legend.text = element_text(size=10))
+p5 <- ggplot(AllData %>%
+               filter(Population == "RBG - Transplanted"), aes(x = Year, y = GrowthRate, color = ModelType, shape = ModelType)) +
+  geom_errorbar(aes(ymin = LCI, ymax = UCI), width = 0.6) +
+  geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
+  labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
+  scale_color_manual(values = c("lightgray", "#6A0F8E","#4ECDC4"), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  scale_shape_manual(values = c(8,16,17), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
+  
+  #geom_line() +
+  #facet_wrap(~Population) + #, scales = "free_y") +
+  geom_point(size = 3) +
+  theme_classic() +
+  scale_y_continuous(limits = c(0, 1.8)) +
+  theme(legend.position = "none") + #c(0.15, 0.92)) +
+  theme(axis.text = element_text(size = 14)) +
+  theme(axis.title.y = element_blank(),
+        axis.text.y=element_blank())
+
+
+Graphs <- ggarrange(p,  p2,  p3,  p4, p5,
+                      labels = c("(a)", "(b)", "(c)", "(d)", "(e)"),
+                    #widths = c(1,1,1,1),
+                      font.label = list(size = 11), 
+                      hjust = c(-3.5, -3.5, -3.5, -3.5, -3.5),
+                      #hjust = c(-1.5,-0.2,-0.2, -1.5, -0.2, -0.2),
+                      ncol = 3, nrow = 2, align = "hv"
+                    )
+Graphs
+
+
+# Save graph
+# ggsave(plot = p, dpi = 600,
+#       filename = "Wood_Poppy_IProjM_IPopM_Lambda.png",
+#       path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs",
+#       width = 16, height = 7, units = "in")
+# ggsave(plot = p, dpi = 600,
+#       filename = "Wood_Poppy_IProjM_IPopM_Lambda.pdf",
+#       path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs",
+#       width = 16, height = 7, units = "in")
+
+
+```
+
+
+
+
 # Recapture rate
 ```{r}
 # RBG
