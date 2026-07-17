@@ -1996,14 +1996,14 @@ par(mfrow = c(4,3)) # so each row is a population
 
 par(mar=c(1,4,1,1))
 image(y,y,t(K.elas[[1]]),xlab="",ylab="Size (t+1)", col = terrain.colors(30, rev = T), xaxt='n')
-text(45,84, paste("2022-2023"))
+#text(45,84, paste("2022-2023"))
 text(11,85, paste("Bayfield"))
 par(mar=c(1,1,1,1))
 image(y,y,t(K.elas[[2]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
-text(45,84, paste("2023-2024"))
+#text(45,84, paste("2023-2024"))
 par(mar=c(1,1,1,1))
 image(y,y,t(K.elas[[3]]),xlab="",ylab="", col = terrain.colors(30, rev = T), xaxt='n', yaxt="n")
-text(45,84, paste("2024-2025"))
+#text(45,84, paste("2024-2025"))
 
 par(mar=c(1,4,1,1))
 image(y,y,t(K.elas[[4]]),xlab="",ylab="Size (t+1)", col = terrain.colors(30, rev = T), xaxt='n')
@@ -2808,7 +2808,7 @@ for(i in 1:51){
   SeedSurv_lambda_a$Year <- rep(c(1, 2, 3), times = 4000)
   SeedSurv_lambda_a <- SeedSurv_lambda_a %>%
     # use the first two groups to split by population and year
-    group_by(Pop, Year,###
+    group_by(#Pop, Year,###
              Prob_Surv_Seed) %>%
     summarise(mean = mean(lambda),
               LCI = quantile(lambda, probs = 0.025),
@@ -3035,7 +3035,7 @@ p2 <- ggplot(SeedSurv_lambda %>%
   geom_point(Obs_lambda, mapping = aes(x = Prob_Surv_Seed, y = mean), color = "darkblue", size = 3) +
   # lambda of 1 line
   geom_hline(yintercept = 1, color = "red", linetype = 2) +
-  labs(x = "Seedling Germination (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
+  labs(x = "Seedling Emergence (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
   #facet_grid(Pop ~ Year, scales = "free") +
   theme_classic() +
   theme(text = element_text(size = 16))
@@ -3088,7 +3088,7 @@ pAll <- ggplot(SeedSurv_lambda2 %>%
              , mapping = aes(x = Prob_Surv_Seed, y = mean), color = "darkblue", size = 3) +
   # lambda of 1 line
   geom_hline(yintercept = 1, color = "red", linetype = 2) +
-  labs(x = "Seedling Germination (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
+  labs(x = "Seedling Emergence (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
   facet_grid(Pop ~ Year, scales = "free_y") +
   theme_classic() +
   theme(text = element_text(size = 16)) +

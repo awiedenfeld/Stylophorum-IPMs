@@ -22,6 +22,7 @@ library(dplyr)
 library(stringr)
 library(IPMbook)
 library(jagsUI)
+library(ggh4x) # for plots
 
 #Load data
 capt_hist <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/MarkRecapture_Multistate.csv", colClasses='character')
@@ -1165,8 +1166,15 @@ Plot
 # make labels
 PopFacet <- c("Bayfield" = "(a) Bayfield", "Denfield" = "(b) Denfield", "Fanshawe" = "(c) Fanshawe", "Ilderton" = "(d) Ilderton", "RBG - Transplanted" = "(e) RBG")
 
-p <- ggplot(AllData %>%
-              filter(Population != "Meadowlily"), aes(x = Year, y = GrowthRate, color = ModelType, shape = ModelType)) +
+p <-ggplot(AllData %>%
+             filter(Population != "Meadowlily") %>%
+             filter(Year > 2019 & Year < 2024.75) %>%
+             
+             mutate(Population = case_when(Population == "Bayfield" ~ "(a) Bayfield",
+                                           Population == "Denfield" ~ "(b) Denfield",
+                                           Population == "Fanshawe" ~ "(c) Fanshawe",
+                                           Population == "Ilderton" ~ "(d) Ilderton",
+                                           Population == "RBG - Transplanted" ~ "(e) RBG")), aes(x = Year, y = GrowthRate, color = ModelType, shape = ModelType)) +
   geom_errorbar(aes(ymin = LCI, ymax = UCI), width = 0.6) +
   geom_hline(yintercept = 1, col = "darkred", linetype = 2) +
   labs(x = "Year t", y = expression(paste("Growth rate (", lambda, ")"))) +
@@ -1174,21 +1182,32 @@ p <- ggplot(AllData %>%
   scale_shape_manual(values = c(8,16,17), name = "Model Type", labels = c("Counts", "Integrated Population Model", "Integral Projection Model")) +
   # show every x axis value
   scale_x_continuous(breaks = seq(2020, 2024, by = 1)) +
+
   #geom_line() +
-  facet_wrap(~Population, labeller = as_labeller(PopFacet)) + #, scales = "free_y") +
+  #facet_wrap(~Population, labeller = as_labeller(PopFacet)) +
   geom_point(size = 3) +
   theme_classic() +
-  theme(legend.position = c(0.08, 0.1)) +#c(0.15, 0.1)) + #c(0.15, 0.92)) +
+  theme(legend.position = c(0.84,0.1)) +#c(0.13, 0.1)) +#c(0.15, 0.1)) + #c(0.15, 0.92)) +
   theme(strip.background = element_blank()) +
   theme(strip.text = element_text(hjust = 0)) +
   # adds axes to each facet
   annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
   annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
+  
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  
+  
   theme(strip.text = element_text( size = 14, color = "black")) +
   theme(axis.text = element_text(size = 14)) +
-  theme(legend.title = element_text(size=10), #change legend title font size
-        legend.text = element_text(size=10))
-p
+  theme(axis.title = element_text(size = 14)) +
+  theme(legend.title = element_text(size=14), #change legend title font size
+        legend.text = element_text(size=14))
+#p
+
+# add back the tick marks on all plots
+p1 <- p +  facet_wrap2(vars(Population), axes = "all", remove_labels = "all")
+p1
+
 #############################
 # Make with multiple panels
 p <- ggplot(AllData %>%
@@ -1293,14 +1312,14 @@ Graphs
 
 
 # Save graph
-# ggsave(plot = p, dpi = 600,
+# ggsave(plot = p1, dpi = 600,
 #       filename = "Wood_Poppy_IProjM_IPopM_Lambda.png",
 #       path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs",
-#       width = 16, height = 7, units = "in")
-# ggsave(plot = p, dpi = 600,
+#       width = 9, height = 5, units = "in")
+# ggsave(plot = p1, dpi = 600,
 #       filename = "Wood_Poppy_IProjM_IPopM_Lambda.pdf",
 #       path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs",
-#       width = 16, height = 7, units = "in")
+#       width = 9, height = 5, units = "in")
 
 
 ```
@@ -1340,4 +1359,12 @@ sum(jags.data$marr[,16])
 
 399/(399 + 129) * 100
 
+
+# Bayfield
+jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_Bayfield.rds")
+
+sum(jags.data$marr[,1:15])
+sum(jags.data$marr[,16])
+
+441/(441+66) * 100
 ```
