@@ -1154,6 +1154,9 @@ CountLambda <- CountLambda %>%
 CountLambda[12, 3] <- NA
 CountLambda[11, 3] <- NA
 
+# Fix RBG count to be the average (so the nth root of the overall)
+CountLambda[31,3] <- CountLambda[31,3]^(1/3)
+
 
 head(CountLambda)
 
@@ -1368,3 +1371,118 @@ sum(jags.data$marr[,16])
 
 441/(441+66) * 100
 ```
+
+# Vital Rates
+```{r}
+
+# ann.growth.rate
+mean(out2_B$q50$ann.growth.rate[1:5])
+mean(out2_D$q50$ann.growth.rate[1:5])
+mean(out2_F$q50$ann.growth.rate[1:5])
+mean(out2_I$q50$ann.growth.rate[1:5])
+mean(out2_R$q50$ann.growth.rate[2:5])
+
+mean(out2_B$sd$ann.growth.rate[1:5])
+mean(out2_D$sd$ann.growth.rate[1:5])
+mean(out2_F$sd$ann.growth.rate[1:5])
+mean(out2_I$sd$ann.growth.rate[1:5])
+mean(out2_R$sd$ann.growth.rate[2:5])
+
+mean(out2_B$q2.5$ann.growth.rate[1:5])
+mean(out2_D$q2.5$ann.growth.rate[1:5])
+mean(out2_F$q2.5$ann.growth.rate[1:5])
+mean(out2_I$q2.5$ann.growth.rate[1:5])
+mean(out2_R$q2.5$ann.growth.rate[2:5])
+
+mean(out2_B$q97.5$ann.growth.rate[1:5])
+mean(out2_D$q97.5$ann.growth.rate[1:5])
+mean(out2_F$q97.5$ann.growth.rate[1:5])
+mean(out2_I$q97.5$ann.growth.rate[1:5])
+mean(out2_R$q97.5$ann.growth.rate[2:5])
+
+
+
+
+# SA
+mean(out2_B$q50$sa[1:5])
+mean(out2_D$q50$sa[1:5])
+mean(out2_F$q50$sa[1:5])
+mean(out2_I$q50$sa[1:5])
+mean(out2_R$q50$sa[1:5])
+
+mean(out2_B$sd$sa[1:5])
+mean(out2_D$sd$sa[1:5])
+mean(out2_F$sd$sa[1:5])
+mean(out2_I$sd$sa[1:5])
+mean(out2_R$sd$sa[1:5])
+
+mean(out2_B$q2.5$sa[1:5])
+mean(out2_D$q2.5$sa[1:5])
+mean(out2_F$q2.5$sa[1:5])
+mean(out2_I$q2.5$sa[1:5])
+mean(out2_R$q2.5$sa[1:5])
+
+mean(out2_B$q97.5$sa[1:5])
+mean(out2_D$q97.5$sa[1:5])
+mean(out2_F$q97.5$sa[1:5])
+mean(out2_I$q97.5$sa[1:5])
+mean(out2_R$q97.5$sa[1:5])
+
+
+
+# SJ
+mean(out2_B$q50$sj[1:5])
+mean(out2_D$q50$sj[1:5])
+mean(out2_F$q50$sj[1:5])
+mean(out2_I$q50$sj[1:5])
+mean(out2_R$q50$sj[1:5])
+
+mean(out2_B$sd$sj[1:5])
+mean(out2_D$sd$sj[1:5])
+mean(out2_F$sd$sj[1:5])
+mean(out2_I$sd$sj[1:5])
+mean(out2_R$sd$sj[1:5])
+
+mean(out2_B$q2.5$sj[1:5])
+mean(out2_D$q2.5$sj[1:5])
+mean(out2_F$q2.5$sj[1:5])
+mean(out2_I$q2.5$sj[1:5])
+mean(out2_R$q2.5$sj[1:5])
+
+mean(out2_B$q97.5$sj[1:5])
+mean(out2_D$q97.5$sj[1:5])
+mean(out2_F$q97.5$sj[1:5])
+mean(out2_I$q97.5$sj[1:5])
+mean(out2_R$q97.5$sj[1:5])
+
+
+# SY
+mean(out2_B$q50$sy[1:5])
+mean(out2_D$q50$sy[1:5])
+mean(out2_F$q50$sy[1:5])
+mean(out2_I$q50$sy[1:5])
+mean(out2_R$q50$sy[1:5])
+
+mean(out2_B$sd$sy[1:5])
+mean(out2_D$sd$sy[1:5])
+mean(out2_F$sd$sy[1:5])
+mean(out2_I$sd$sy[1:5])
+mean(out2_R$sd$sy[1:5])
+
+mean(out2_B$q2.5$sy[1:5])
+mean(out2_D$q2.5$sy[1:5])
+mean(out2_F$q2.5$sy[1:5])
+mean(out2_I$q2.5$sy[1:5])
+mean(out2_R$q2.5$sy[1:5])
+
+mean(out2_B$q97.5$sy[1:5])
+mean(out2_D$q97.5$sy[1:5])
+mean(out2_F$q97.5$sy[1:5])
+mean(out2_I$q97.5$sy[1:5])
+mean(out2_R$q97.5$sy[1:5])
+
+
+
+
+```
+

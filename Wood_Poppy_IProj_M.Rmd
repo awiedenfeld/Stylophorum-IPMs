@@ -543,7 +543,7 @@ pch_names <- c(1:4)
 p1 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Height_cm_t1,
                          col = Population, linetype = Population)) +
   geom_point(alpha = 0.5) +
-  labs (x = "Height in year t (cm)", y = "Height in year t + 1 (cm)") +
+  labs (x = "Height in year t (cm)", y = "Height in Year t + 1 (cm)") +
   scale_color_manual(values = PopCol) +
   stat_smooth(method = "lm", formula = y ~ x, size = 1, se = T, fill = NA) +
     scale_linetype_manual(values = c("Bayfield" = 1, "Fanshawe" = 1, "Ilderton" = 1, "RBG" = 1)) +
@@ -554,8 +554,8 @@ p1 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Height_cm_t1,
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank()) +
   # Fix font sizes
-  theme(axis.text=element_text(size=12),
-        axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=14),
+        axis.title=element_text(size=16))
 
 ## Flowering
 
@@ -598,13 +598,13 @@ p2 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Flowering, col = Population)
   geom_line(data = newdatF, aes(x = Height_cm_t, y = Flowering), col = "#0072B2", linetype = 1, linewidth = 1) +
   geom_line(data = newdatI, aes(x = Height_cm_t, y = Flowering), col = "#F0E442", linetype = 1, linewidth = 1) +
   geom_line(data = newdatR, aes(x = Height_cm_t, y = Flowering), col = "#009E73", linetype = 1, linewidth = 1) +
-  labs(x = "Height in year t (cm)", y = "Probability of Flowering Year t+1") +
+  labs(x = "Height in Year t (cm)", y = "Probability of Flowering Year t+1") +
   xlim(0, 90) +
   theme_classic() + 
   theme(legend.position="none") +
   # Fix font sizes
-  theme(axis.text=element_text(size=12),
-        axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=14),
+        axis.title=element_text(size=16))
 
 # Survival
 
@@ -653,7 +653,7 @@ p4 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Survival_t1, col = Populatio
                      #labels=c("1", "3", "4", "6")
                      labels = c("Bayfield", "Fanshawe", "Ilderton", "RBG")) +
   geom_line(data = newdat, aes(x = Height_cm_t, y = Survival_t1, linetype = Population), linewidth = 1) +
-  labs(x = "Height in year t (cm)", y = "Probability of Survival Year t+1") +
+  labs(x = "Height in Year t (cm)", y = "Probability of Survival Year t+1") +
   scale_linetype_manual(values = c("Bayfield" = 1, "Fanshawe" = 1, "Ilderton" = 1, "RBG" = 1),
                         #labels=c("1", "3", "4", "6")
                         labels = c("Bayfield", "Fanshawe", "Ilderton", "RBG")) +
@@ -665,21 +665,21 @@ p4 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Survival_t1, col = Populatio
   theme(legend.position.inside = c(0.85, 0.5),
         legend.background = element_rect(fill = "white", colour = "lightgray")) +
   theme(legend.key.size = unit(1, 'cm'),
-        legend.text = element_text(size = 12),
-        legend.title = element_text(size = 14))+
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18))+
   theme(axis.title.x = element_blank(),
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank()) +
   # Fix font sizes
-  theme(axis.text=element_text(size=12),
-        axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=14),
+        axis.title=element_text(size=16))
 
 # Seeds
 
 p3 <- ggplot(Estab_Plants2, aes(x = Height_cm_t, y = log(Seed_Number_t1),
                          col = Population, linetype = Population)) +
   geom_point(alpha = 0.5) +
-  labs (x = "Height in year t (cm)", y = "log(Seeds per plant), Year t + 1") +
+  labs (x = "Height in Year t (cm)", y = "log(Seeds per plant), Year t + 1") +
   scale_color_manual(values = PopCol) +
   stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1, se = T, fill = NA) +
   scale_linetype_manual(values = c("Bayfield" = 1, "Fanshawe" = 1, "Ilderton" = 1, "RBG" = 1)) +
@@ -687,13 +687,13 @@ p3 <- ggplot(Estab_Plants2, aes(x = Height_cm_t, y = log(Seed_Number_t1),
   theme_classic() +
   theme(legend.position="none") +
   # Fix font sizes
-  theme(axis.text=element_text(size=12),
-        axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=14),
+        axis.title=element_text(size=16))
 
 Graphs <- ggarrange(p4, p1, p2, p3,
                     labels = c("(a)", "(b)", "(c)", "(d)"),
                     font.label = list(size = 12), 
-                    hjust = -0.2,
+                    hjust = c(-2.9, -2.4, -2.9, -2.3),
                     ncol = 2, nrow = 2, align = "h")
 Graphs
 
@@ -1192,40 +1192,40 @@ bigmatrix <- function(params_list, mat.size){
   # y is the mesh points of the matrix
   
   # Fertility matrix
-  Fmat<-matrix(0,(n+4),(n+4))
+  Fmat<-matrix(0,(n+1),(n+1))
   
   # Fecundity
   
   #Seedlings this year
-  Fmat[4,5:(n+4)] <- Prob_Germ_1 * F_z(y, Year_t, params_list) + #seedlings this years seed
-    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
-    Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
+  Fmat[1,2:(n+1)] <- Prob_Germ_1 * F_z(y, Year_t, params_list)# + #seedlings this years seed
+    #Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    #Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
   
   #Seedbank with t-1 and t-2 seeds
-  Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
-  Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
-  Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
+  #Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
+  #Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  #Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
   
   # Growth/survival transition matrix
-  Tmat<-matrix(0,(n+4),(n+4))
+  Tmat<-matrix(0,(n+1),(n+1))
   
   # probability a seed stays in the seedbank
-  Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
-  Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
-  Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  #Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  #Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
   
   # probability seed germinates after 2 years
-  Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
-  Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
+  #Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
   
   # probability seed germinates fresh
-  Tmat[4,3] <- Prob_Germ_1
+  #Tmat[4,3] <- Prob_Germ_1
   
   # probability a seedling establishes as adult
-  Tmat[5:(n+4),4] <- Sur_z1(params_list) * Se_z(y, params_list)
+  Tmat[2:(n+1),1] <- Sur_z1(params_list) * Se_z(y, params_list)
   
   # survival and growth
-  Tmat[5:(n+4),5:(n+4)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
+  Tmat[2:(n+1),2:(n+1)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
   
   # Full kernel -- adds two kernels built
   IPMmat <- Fmat + Tmat
@@ -1733,41 +1733,41 @@ bigmatrix <- function(params_list, mat.size){
   y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
   # y is the mesh points of the matrix
   
-  # Fertility matrix
-  Fmat<-matrix(0,(n+4),(n+4))
+ # Fertility matrix
+  Fmat<-matrix(0,(n+1),(n+1))
   
   # Fecundity
   
   #Seedlings this year
-  Fmat[4,5:(n+4)] <- Prob_Germ_1 * F_z(y, Year_t, params_list) + #seedlings this years seed
-    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
-    Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
+  Fmat[1,2:(n+1)] <- Prob_Germ_1 * F_z(y, Year_t, params_list)# + #seedlings this years seed
+    #Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    #Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
   
   #Seedbank with t-1 and t-2 seeds
-  Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
-  Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
-  Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
+  #Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
+  #Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  #Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
   
   # Growth/survival transition matrix
-  Tmat<-matrix(0,(n+4),(n+4))
+  Tmat<-matrix(0,(n+1),(n+1))
   
   # probability a seed stays in the seedbank
-  Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
-  Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
-  Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  #Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  #Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
   
   # probability seed germinates after 2 years
-  Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
-  Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
+  #Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
   
   # probability seed germinates fresh
-  Tmat[4,3] <- Prob_Germ_1
+  #Tmat[4,3] <- Prob_Germ_1
   
   # probability a seedling establishes as adult
-  Tmat[5:(n+4),4] <- Sur_z1(params_list) * Se_z(y, params_list)
+  Tmat[2:(n+1),1] <- Sur_z1(params_list) * Se_z(y, params_list)
   
   # survival and growth
-  Tmat[5:(n+4),5:(n+4)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
+  Tmat[2:(n+1),2:(n+1)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
   
   # Full kernel -- adds two kernels built
   IPMmat <- Fmat + Tmat
@@ -1836,20 +1836,20 @@ lambda <-  data.frame(matrix(ncol = 12, nrow = 1))
 #provide column names
 colnames(lambda) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
                       'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
-w.z <- data.frame(matrix(ncol = 12, nrow = 104))
+w.z <- data.frame(matrix(ncol = 12, nrow = 101))
 #provide column names
 colnames(w.z) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
                       'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
-v.z1 <- data.frame(matrix(ncol = 12, nrow = 104))
+v.z1 <- data.frame(matrix(ncol = 12, nrow = 101))
 #provide column names
 colnames(v.z1) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
                       'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
 
-stable.dist <- data.frame(matrix(ncol = 12, nrow = 104))
+stable.dist <- data.frame(matrix(ncol = 12, nrow = 101))
 #provide column names
 colnames(stable.dist) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
                       'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
-repro.val <- data.frame(matrix(ncol = 12, nrow = 104))
+repro.val <- data.frame(matrix(ncol = 12, nrow = 101))
 #provide column names
 colnames(repro.val) <- c('Bayfield1', 'Fanshawe1', 'Ilderton1', 'RBG1','Bayfield2', 'Fanshawe2', 'Ilderton2', 'RBG2',
                       'Bayfield3', 'Fanshawe3', 'Ilderton3', 'RBG3')
@@ -1938,24 +1938,24 @@ data1 <- K.elas[[1]]
 
 # make separate image for seedlings
 data2 <- data1
-data2[5:104,5:104] <- NA
-data2[1:3, 1:3] <- NA
-y2 <- c(-0.1, -0.01, -0.001, 0, y)
+data2[2:101,2:101] <- NA
+#data2[1:3, 1:3] <- NA
+y2 <- c(0, y)
 
 # and seedbank
-data3 <- data1
-data3[4:104,4:104] <- NA
-y3 <- c(-3, -2, -1, -0.99, y)
+#data3 <- data1
+#data3[4:104,4:104] <- NA
+#y3 <- c(-3, -2, -1, -0.99, y)
 
 
-image(y,y,t(data1[5:104,5:104]), xlab="Size Year t",ylab="Size Year t+1", main="Elasticity",
+image(y,y,t(data1[2:101,2:101]), xlab="Size Year t",ylab="Size Year t+1", main="Elasticity",
            col = terrain.colors(30, rev = T), xlim = c(-3, 90), ylim = c(-3,90))
 
 image(y2,y2,t(data2),
            col = terrain.colors(30, rev = T), add = T)
 
-image(y3,y3,t(data3),
-           col = terrain.colors(30, rev = T), add = T)
+#image(y3,y3,t(data3),
+#           col = terrain.colors(30, rev = T), add = T)
 #dev.off()
 
 #### Another version with a scale! #####
@@ -1965,21 +1965,21 @@ image(y3,y3,t(data3),
 #    width = 7, height = 6, units = "in", res = 600)
 
 # zlim makes them the same scale
-image.plot(y,y,t(data1[5:104,5:104]), xlab="Size Year t",ylab="Size Year t+1",
-           col = terrain.colors(30, rev = T), xlim = c(-3, 90), ylim = c(-3,90), zlim = c(0,0.007))
+image.plot(y,y,t(data1[2:101,2:101]), xlab="Size Year t",ylab="Size Year t+1",
+           col = terrain.colors(30, rev = T), xlim = c(0, 90), ylim = c(0,90), zlim = c(0,0.007))
 
-image.plot(y2,y2,t(data2)^1, zlim = c(0,.007),
+image.plot(y2,y2,t(data2), zlim = c(0,0.007),
            col = terrain.colors(30, rev = T), add = T)
 
-image.plot(y3,y3,t(data3)^1, zlim = c(0,0.007),
-           col = terrain.colors(30, rev = T), add = T)
+#image.plot(y3,y3,t(data3)^1, zlim = c(0,0.007),
+#           col = terrain.colors(30, rev = T), add = T)
 #dev.off()
 ```
 
 Make figure with all kernels for supplemental
 ```{r}
 #plot sensitivity
-  n <- mat.size + 4  #matrix size
+  n <- mat.size + 1  #matrix size
   L <- min.size #lower integration limit
   U <- max.size #upper integration limit
   h <- (U - L)/n #Bin size
@@ -2035,7 +2035,7 @@ image(y,y,t(K.elas[[12]]),xlab="Size (t)",ylab="", col = terrain.colors(30, rev 
 ## Stable Size Distribution
 
 ```{r}
-stable.dist <- data.frame(matrix(ncol = 12, nrow = 104))
+stable.dist <- data.frame(matrix(ncol = 12, nrow = 101))
 
 #plot sensitivity
 n <- mat.size   #matrix size
@@ -2048,11 +2048,11 @@ y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
 
 # Normalize the stable distribution
 for(i in 1:12){
-  stable.dist[,i] <- w.z[1:104,i]/sum(w.z[1:104,i])
+  stable.dist[,i] <- w.z[1:101,i]/sum(w.z[1:101,i])
 }
 
 #maybe don't use smallest sizes
-y <- c(0.5, 1, 1.5, 2, y)
+y <- c(2, y)
 
 # GGPlot version
 names(stable.dist) <- c("B1", "B2","B3", "F1","F2","F3","I1","I2", "I3","R1","R2", "R3")
@@ -2080,7 +2080,7 @@ p <- ggplot(data=data4 %>%
   #add axes on all graphs, instead of just bottom and left ones
   theme(axis.line=element_line()) +
   scale_x_continuous(limits=c(0,90)) +
-  scale_y_continuous(limits=c(0,0.3)) +
+  scale_y_continuous(limits=c(0,0.85)) +
   theme(axis.title.x = element_blank(),
         axis.text.x=element_blank()) +
   #move the legend
@@ -2099,7 +2099,7 @@ p2 <- ggplot(data=data4 %>%
   #add axes on all graphs, instead of just bottom and left ones
   theme(axis.line=element_line()) +
   scale_x_continuous(limits=c(0,90)) +
-  scale_y_continuous(limits=c(0,0.3)) +
+  scale_y_continuous(limits=c(0,0.85)) +
   theme(axis.title = element_blank(),
         axis.text=element_blank()) +
   #move the legend
@@ -2118,7 +2118,7 @@ p3 <- ggplot(data=data4 %>%
   #add axes on all graphs, instead of just bottom and left ones
   theme(axis.line=element_line()) +
   scale_x_continuous(limits=c(0,90)) +
-  scale_y_continuous(limits=c(0,0.3)) +
+  scale_y_continuous(limits=c(0,0.85)) +
   #move the legend
   theme(legend.position = "none") +
   theme(strip.background = element_blank())
@@ -2135,7 +2135,7 @@ p4 <- ggplot(data=data4 %>%
   #add axes on all graphs, instead of just bottom and left ones
   theme(axis.line=element_line()) +
   scale_x_continuous(limits=c(0,90)) +
-  scale_y_continuous(limits=c(0,0.3)) +
+  scale_y_continuous(limits=c(0,0.85)) +
   theme(axis.title.y = element_blank(),
         axis.text.y=element_blank()) +
   # move the legend
@@ -2156,9 +2156,9 @@ Graphs <- ggarrange(p,  p2,  p3,  p4,
 Graphs
 
 # save plot
- ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
-        filename = "StableSizeDist.png",
-        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+# ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
+#        filename = "StableSizeDist.png",
+#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
 #        filename = "StableSizeDist.pdf",
 #        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
@@ -2195,7 +2195,7 @@ stoc_pert_analysis<-function(Params,n.est,n.runin){
 	
 	year.i <- sample(1:n.years,n.est+1,replace=TRUE)
 
-	K.year.i <- array(NA,c((nBigMatrix+4),(nBigMatrix+4),n.years))
+	K.year.i <- array(NA,c((nBigMatrix+1),(nBigMatrix+1),n.years))
 	
 	for(i in 1:n.years){
 		year.K<-bigmatrix(Params[i,],nBigMatrix)
@@ -2215,7 +2215,7 @@ stoc_pert_analysis<-function(Params,n.est,n.runin){
     cat(h*sum(v*w)," should = 1","\n")
 
 #Esimate Lambda s
-	nt<-rep(1/(nBigMatrix+4),(nBigMatrix+4))
+	nt<-rep(1/(nBigMatrix+1),(nBigMatrix+1))
 	rt.V <- rt.N <- rep(NA,n.est)
 	
 #Iterate model
@@ -2236,7 +2236,7 @@ stoc_pert_analysis<-function(Params,n.est,n.runin){
 Ls <- exp(mean(rt.V))
 	
 ### Get wt and Rt time series ###
-	wt<-matrix(1/nBigMatrix, nrow=n.est+1, ncol=(nBigMatrix+4));
+	wt<-matrix(1/nBigMatrix, nrow=n.est+1, ncol=(nBigMatrix+1));
 	for (i in 1:n.est) {
 		
 		K             <- K.year.i[,,year.i[i]]
@@ -2247,7 +2247,7 @@ Ls <- exp(mean(rt.V))
 	}
 
 ### Get vt time series ###
-	vt<-matrix(1/nBigMatrix, nrow=n.est+1, ncol=(nBigMatrix+4));
+	vt<-matrix(1/nBigMatrix, nrow=n.est+1, ncol=(nBigMatrix+1));
 	for (i in (n.est+1):2) {
 		K           <- K.year.i[,,year.i[i]]
 		vt[i-1,]  <- vt[i,] %*% K
@@ -2256,7 +2256,7 @@ Ls <- exp(mean(rt.V))
 
 	}
 
-sens.s <- matrix(0,nrow=(nBigMatrix+4),ncol=(nBigMatrix+4));
+sens.s <- matrix(0,nrow=(nBigMatrix+1),ncol=(nBigMatrix+1));
 elas.s <- sens.s
 
 for (i in n.runin:(n.est-n.runin)) {
@@ -2406,41 +2406,41 @@ bigmatrix<-function(ltre_list, mat.size){
   y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
   # y is the mesh points of the matrix
   
-  # Fertility matrix
-  Fmat<-matrix(0,(n+4),(n+4))
+ # Fertility matrix
+  Fmat<-matrix(0,(n+1),(n+1))
   
   # Fecundity
   
   #Seedlings this year
-  Fmat[4,5:(n+4)] <- Prob_Germ_1 * F_z(y, Year_t, ltre_list) + #seedlings this years seed
-    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, ltre_list) + #last year seed
-    Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, ltre_list) #2 year ago seed
+  Fmat[1,2:(n+1)] <- Prob_Germ_1 * F_z(y, Year_t, ltre_list)# + #seedlings this years seed
+    #Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    #Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
   
   #Seedbank with t-1 and t-2 seeds
-  Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, ltre_list) #3-year old seeds
-  Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, ltre_list) #2-year old seeds
-  Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, ltre_list) #1-year old seeds
+  #Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
+  #Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  #Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
   
   # Growth/survival transition matrix
-  Tmat<-matrix(0,(n+4),(n+4))
+  Tmat<-matrix(0,(n+1),(n+1))
   
   # probability a seed stays in the seedbank
-  Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
-  Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
-  Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  #Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  #Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
   
   # probability seed germinates after 2 years
-  Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
-  Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
+  #Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
   
   # probability seed germinates fresh
-  Tmat[4,3] <- Prob_Germ_1
+  #Tmat[4,3] <- Prob_Germ_1
   
   # probability a seedling establishes as adult
-  Tmat[5:(n+4),4] <- Sur_z1(ltre_list) * Se_z(y, ltre_list)
+  Tmat[2:(n+1),1] <- Sur_z1(ltre_list) * Se_z(y, ltre_list)
   
   # survival and growth
-  Tmat[5:(n+4),5:(n+4)] <- (outer(y,y,P_z, Year_t, ltre_list)) * h
+  Tmat[2:(n+1),2:(n+1)] <- (outer(y,y,P_z, Year_t, ltre_list)) * h #removed transpose of outer()
   
   # Full kernel -- adds two kernels built
   IPMmat <- Fmat + Tmat
@@ -2531,7 +2531,7 @@ ltre_lambda <- ltre_lambda %>%
                              version == "Recruit_Size" ~ "Recruit Size",
                              version == "s.int" ~ "Survival Intercept",
                              version == "s.slope" ~ "Survival Slope",
-                             version == "Prob_Germ_1" ~ "Fresh Germination",
+                             version == "Prob_Germ_1" ~ "Germination",
                              version == "Prob_Germ_2" ~ "Seedbank Germination",
                              version == "Prob_Surv_Seed" ~ "Seed Viability",
                              version == "Estab" ~ "Seedling Establishment"))
@@ -2548,7 +2548,7 @@ ltre_lambda$version <- factor(ltre_lambda$version, levels = c("Survival Intercep
                                                                    "Seed Production Intercept",
                                                                    "Seed Production Slope",
                                                                    "Seedling Establishment",
-                                                                   "Fresh Germination",
+                                                                   "Germination",
                                                                    "Seedbank Germination",
                                                                    "Seed Viability"))
 
@@ -2627,7 +2627,7 @@ p3 <- ltre_lambda %>%
     labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
     theme(axis.title = element_text(size = 14)) +
-      scale_y_continuous(limits = c(-1.8, 2)) +
+      scale_y_continuous(limits = c(-1.8, 2.1)) +
     geom_hline(yintercept = 0) +
   theme_classic() +
   theme(legend.position = "none") +
@@ -2644,7 +2644,7 @@ p4 <- ltre_lambda %>%
     geom_bar(stat = "identity", fill = "#009E73")+
     labs(x = "Model Parameters", y = expression(paste("Elasticity of ", lambda))) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-      scale_y_continuous(limits = c(-1.8, 2)) +
+      scale_y_continuous(limits = c(-1.8, 2.1)) +
     geom_hline(yintercept = 0) +
   theme_classic() +
   theme(legend.position = "none") +
@@ -2733,37 +2733,41 @@ bigmatrix <- function(params_list, mat.size, Estab){
   y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
   # y is the mesh points of the matrix
   
-  # Fertility matrix
-  Fmat<-matrix(0,(n+3),(n+3))
+   # Fertility matrix
+  Fmat<-matrix(0,(n+1),(n+1))
   
   # Fecundity
   
   #Seedlings this year
-  Fmat[3,4:(n+3)] <- Prob_Germ_1 * F_z(y, Year_t, params_list) + #seedlings this years seed
-    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
-    Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
+  Fmat[1,2:(n+1)] <- Prob_Germ_1 * F_z(y, Year_t, params_list)# + #seedlings this years seed
+    #Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    #Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
   
   #Seedbank with t-1 and t-2 seeds
-  Fmat[1,4:(n+3)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
-  Fmat[2,4:(n+3)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
+  #Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
+  #Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  #Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
   
   # Growth/survival transition matrix
-  Tmat<-matrix(0,(n+3),(n+3))
+  Tmat<-matrix(0,(n+1),(n+1))
   
   # probability a seed stays in the seedbank
-  Tmat[2,1] <- 1 - Prob_Germ_1 * Prob_Surv_Seed
+  #Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  #Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
   
   # probability seed germinates after 2 years
-  Tmat[3,1] <- Prob_Germ_2 * Prob_Surv_Seed
+  #Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
   
   # probability seed germinates fresh
-  Tmat[3,2] <- Prob_Germ_1
+  #Tmat[4,3] <- Prob_Germ_1
   
   # probability a seedling establishes as adult
-  Tmat[4:(n+3),3] <- Estab * Se_z(y, params_list)
+  Tmat[2:(n+1),1] <- Estab * Se_z(y, params_list)
   
   # survival and growth
-  Tmat[4:(n+3),4:(n+3)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
+  Tmat[2:(n+1),2:(n+1)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
   
   # Full kernel -- adds two kernels built
   IPMmat <- Fmat + Tmat
@@ -2808,7 +2812,7 @@ for(i in 1:51){
   SeedSurv_lambda_a$Year <- rep(c(1, 2, 3), times = 4000)
   SeedSurv_lambda_a <- SeedSurv_lambda_a %>%
     # use the first two groups to split by population and year
-    group_by(#Pop, Year,###
+    group_by(Pop, Year,###
              Prob_Surv_Seed) %>%
     summarise(mean = mean(lambda),
               LCI = quantile(lambda, probs = 0.025),
@@ -2850,7 +2854,9 @@ p <- ggplot(SeedSurv_lambda %>%
   labs(x = "Seedling Establishment (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
   #facet_grid(Pop ~ Year, scales = "free") +
   theme_classic() +
-  theme(text = element_text(size = 16))
+  theme(text = element_text(size = 16),
+        axis.text=element_text(size=14),
+        axis.title=element_text(size=16))
 p
 # ggsave(plot = p, dpi = 600, width = 12, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Surv_Sim.png",
@@ -2860,7 +2866,7 @@ p
 #        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 
 # Make separate panels for each year/pop combination for the supplemental
-SeedSurv_lambda2 <- SeedSurv_lambda %>%
+SeedSurv_lambda2 <- SeedSurv_lambda# %>%
   mutate(Pop = case_when(Pop == "Bayfield" ~ "1",
                          Pop == "Fanshawe" ~ "3",
                          Pop == "Ilderton" ~ "4",
@@ -2919,37 +2925,41 @@ bigmatrix <- function(params_list, mat.size, Prob_Germ_1){
   y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
   # y is the mesh points of the matrix
   
-  # Fertility matrix
-  Fmat<-matrix(0,(n+3),(n+3))
+   # Fertility matrix
+  Fmat<-matrix(0,(n+1),(n+1))
   
   # Fecundity
   
   #Seedlings this year
-  Fmat[3,4:(n+3)] <- Prob_Germ_1 * F_z(y, Year_t, params_list) + #seedlings this years seed
-    Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
-    Prob_Germ_2 * (1 - Prob_Germ_1_Orig) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
+  Fmat[1,2:(n+1)] <- Prob_Germ_1 * F_z(y, Year_t, params_list)# + #seedlings this years seed
+    #Prob_Germ_2 * Prob_Surv_Seed * S1_z(y, Year_t, params_list) + #last year seed
+    #Prob_Germ_2 * (1 - Prob_Germ_1) * Prob_Surv_Seed * Prob_Germ_2 * Prob_Surv_Seed *  S1_z(y, Year_t, params_list) #2 year ago seed
   
   #Seedbank with t-1 and t-2 seeds
-  Fmat[1,4:(n+3)] <- (1 - Prob_Germ_1_Orig) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
-  Fmat[2,4:(n+3)] <- (1 - Prob_Germ_1_Orig - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
+  #Fmat[1,5:(n+4)] <- (1 - Prob_Germ_1) * (1 - Prob_Germ_2) * Prob_Surv_Seed * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #3-year old seeds
+  #Fmat[2,5:(n+4)] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #2-year old seeds
+  #Fmat[3,5:(n+4)] <- (1 - Prob_Germ_1 - Prob_Germ_2) * Prob_Surv_Seed * S1_z(y, Year_t, params_list) #1-year old seeds
   
   # Growth/survival transition matrix
-  Tmat<-matrix(0,(n+3),(n+3))
+  Tmat<-matrix(0,(n+1),(n+1))
   
   # probability a seed stays in the seedbank
-  Tmat[2,1] <- 1 - Prob_Germ_1 * Prob_Surv_Seed
+  #Tmat[2,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
+  #Tmat[3,1] <- (1 - Prob_Germ_1) * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[3,2] <- (1 - Prob_Germ_1) * Prob_Surv_Seed
   
   # probability seed germinates after 2 years
-  Tmat[3,1] <- Prob_Germ_2 * Prob_Surv_Seed
+  #Tmat[4,1] <- Prob_Germ_2 * Prob_Surv_Seed * (1 - Prob_Germ_2) * Prob_Surv_Seed
+  #Tmat[4,2] <- Prob_Germ_2 * Prob_Surv_Seed
   
   # probability seed germinates fresh
-  Tmat[3,2] <- Prob_Germ_1
+  #Tmat[4,3] <- Prob_Germ_1
   
   # probability a seedling establishes as adult
-  Tmat[4:(n+3),3] <- Sur_z1(params_list) * Se_z(y, params_list)
+  Tmat[2:(n+1),1] <- Sur_z1(params_list) * Se_z(y, params_list)
   
   # survival and growth
-  Tmat[4:(n+3),4:(n+3)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
+  Tmat[2:(n+1),2:(n+1)] <- (outer(y,y,P_z, Year_t, params_list)) * h #removed transpose of outer()
   
   # Full kernel -- adds two kernels built
   IPMmat <- Fmat + Tmat
@@ -3038,7 +3048,9 @@ p2 <- ggplot(SeedSurv_lambda %>%
   labs(x = "Seedling Emergence (%)", y = expression(paste("Growth rate (", lambda, ")"))) +
   #facet_grid(Pop ~ Year, scales = "free") +
   theme_classic() +
-  theme(text = element_text(size = 16))
+  theme(text = element_text(size = 16),
+        axis.text=element_text(size=14),
+        axis.title=element_text(size=16))
 
 p2
 
@@ -3114,11 +3126,130 @@ Graphs <- ggarrange(p, p2,
                     ncol = 1, nrow = 2, align = "v")
 Graphs
 
-# ggsave(plot = Graphs, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+# ggsave(plot = Graphs, dpi = 600, width = 8, height = 8, # was 12w x 6 h
 #        filename = "Combined_Sims.png",
 #        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
-# ggsave(plot = Graphs, dpi = 600, width = 12, height = 8, # was 12w x 6 h
+# ggsave(plot = Graphs, dpi = 600, width = 8, height = 8, # was 12w x 6 h
 #        filename = "Combined_Sims.pdf",
 #        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+```
+
+
+# Mean survival
+```{r}
+# https://stackoverflow.com/questions/71475513/confidence-interval-of-prediction-from-glm-model
+
+
+# Bayfield
+LargeSize <- BEstab_Plants %>%
+  filter(Height_cm_t > 15) %>%
+  summarise(MeanSize = median(Height_cm_t)) %>%
+  pull(MeanSize)
+
+# Bayfield
+SmallSize <- BEstab_Plants %>%
+  filter(Height_cm_t <= 15) %>%
+  summarise(MeanSize = median(Height_cm_t)) %>%
+  pull(MeanSize)
+
+Plants <- data.frame(Height_cm_t = c(SmallSize, LargeSize))
+
+pp <- predict(Surv_Model, Plants, se.fit = TRUE)
+mean <- with(pp, plogis(fit))
+ci_lwr <- with(pp, plogis(fit + qnorm(0.025)*se.fit))
+ci_upr <- with(pp, plogis(fit + qnorm(0.975)*se.fit))
+
+mean
+ci_lwr
+ci_upr
+
+
+# Fanshawe
+LargeSize <- FEstab_Plants %>%
+  filter(Height_cm_t > 15) %>%
+  summarise(MeanSize = median(Height_cm_t)) %>%
+  pull(MeanSize)
+
+
+# Fanshawe
+SmallSize <- FEstab_Plants %>%
+  filter(Height_cm_t <= 15) %>%
+  summarise(MeanSize = median(Height_cm_t)) %>%
+  pull(MeanSize)
+
+
+
+Plants <- data.frame(Height_cm_t = c(SmallSize, LargeSize))
+
+pp <- predict(Surv_Model, Plants, se.fit = TRUE)
+mean <- with(pp, plogis(fit))
+ci_lwr <- with(pp, plogis(fit + qnorm(0.025)*se.fit))
+ci_upr <- with(pp, plogis(fit + qnorm(0.975)*se.fit))
+
+mean
+ci_lwr
+ci_upr
+
+
+
+
+
+# Ilderton
+LargeSize <- IEstab_Plants %>%
+  filter(Height_cm_t > 15) %>%
+  summarise(MeanSize = median(Height_cm_t)) %>%
+  pull(MeanSize)
+
+# Ilderton
+SmallSize <- IEstab_Plants %>%
+  filter(Height_cm_t <= 15) %>%
+  summarise(MeanSize = median(Height_cm_t)) %>%
+  pull(MeanSize)
+
+
+Plants <- data.frame(Height_cm_t = c(SmallSize, LargeSize))
+
+pp <- predict(Surv_Model, Plants, se.fit = TRUE)
+mean <- with(pp, plogis(fit))
+ci_lwr <- with(pp, plogis(fit + qnorm(0.025)*se.fit))
+ci_upr <- with(pp, plogis(fit + qnorm(0.975)*se.fit))
+
+mean
+ci_lwr
+ci_upr
+
+
+
+
+
+# RBG
+LargeSize <- REstab_Plants %>%
+  filter(Height_cm_t > 15) %>%
+  summarise(MeanSize = median(Height_cm_t)) %>%
+  pull(MeanSize)
+
+
+# RBG
+SmallSize <- REstab_Plants %>%
+  filter(Height_cm_t <= 15) %>%
+  summarise(MeanSize = median(Height_cm_t)) %>%
+  pull(MeanSize)
+
+
+
+Plants <- data.frame(Height_cm_t = c(SmallSize, LargeSize))
+
+pp <- predict(Surv_Model, Plants, se.fit = TRUE)
+mean <- with(pp, plogis(fit))
+ci_lwr <- with(pp, plogis(fit + qnorm(0.025)*se.fit))
+ci_upr <- with(pp, plogis(fit + qnorm(0.975)*se.fit))
+
+mean
+ci_lwr
+ci_upr
+
+
+
+
 ```
 
