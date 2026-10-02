@@ -1,6 +1,6 @@
 ---
 title: "Wood-Poppy Integral Projection Model"
-author: "Amy E. Wiedenfeld"
+author: "A"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -41,7 +41,7 @@ SurvData <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/SurvData_IPro
 
 Add data on average number of seeds by population
 ```{r}
-#Average seed count by population (from Emma Neigel's 2022 data)
+#Average seed count by population in 2022 (E. Neigel, personal communication)
 Bayfield_seeds <- 38.6
 Fanshawe_seeds <- 87.5
 Ilderton_seeds <- 37.0
@@ -208,7 +208,7 @@ boot <- 1000
 
 ######## Probability of Germination ########################
 
-#These numbers are from Emma Neigel's translocation experiment.
+#These numbers are from translocation experiment (E. Neigel, personal communication).
 
 #Year 1 (one year after seeds fall--fresh seeds)
 Prob_Germ_1 <- 105/2025 #about 5%
@@ -526,7 +526,7 @@ AllCoefs <- AllCoefs %>%
   add_row(Predictor = "Fanshawe", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 62) %>%
   add_row(Predictor = "Ilderton", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 67) %>%
   add_row(Predictor = "RBG", Coefficient = NA, SE = NA, df = NA, AIC = NA, Test_Statistic = NA, P_value = NA, .before = 72)
-# write.csv(AllCoefs, "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/PopCoefs.csv", row.names = F)
+# write.csv(AllCoefs, "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/PopCoefs.csv", row.names = F)
 ```
 
 # Graphs of Vital Rates
@@ -692,17 +692,18 @@ p3 <- ggplot(Estab_Plants2, aes(x = Height_cm_t, y = log(Seed_Number_t1),
 
 Graphs <- ggarrange(p4, p1, p2, p3,
                     labels = c("(a)", "(b)", "(c)", "(d)"),
-                    font.label = list(size = 12), 
-                    hjust = c(-2.9, -2.4, -2.9, -2.3),
+                    font.label = list(size = 14), 
+                    hjust = c(-3.4, -2.7, -3.4, -2.5),
+                    vjust = 0.1,
                     ncol = 2, nrow = 2, align = "h")
 Graphs
 
 # ggsave(plot = Graphs, dpi = 600, width = 12, height = 8, # was 12w x 6 h
 #        filename = "VitalRates_Pops.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = Graphs, dpi = 600, width = 12, height = 8, # was 12w x 6 h
 #        filename = "VitalRates_Pops.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 ```
 
 # Bootstrapped Model
@@ -1437,10 +1438,10 @@ p
 # Save graph
 # ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
 #       filename = "Population_Lambda.png",
-#       path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#       path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
 #       filename = "Population_Lambda.pdf",
-#       path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#       path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 ```
 
 # Deterministic Model
@@ -1931,7 +1932,7 @@ K.test
   # y is the mesh points of the matrix
   
 # plot one of these
-#png(filename = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity.png",
+#png(filename = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity.png",
 #    width = 6, height = 6, units = "in", res = 600)
   
 data1 <- K.elas[[1]]
@@ -1961,7 +1962,7 @@ image(y2,y2,t(data2),
 #### Another version with a scale! #####
 
 # plot one of these
-#png(filename = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity_scale.png",
+#png(filename = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity_scale.png",
 #    width = 7, height = 6, units = "in", res = 600)
 
 # zlim makes them the same scale
@@ -1987,7 +1988,7 @@ Make figure with all kernels for supplemental
   y <- 0.5 * (b[1:n] + b[2:(n+1)])  #Bin midpoints
   # y is the mesh points of the matrix
   
-#png(filename = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity_allYrs.png",
+#png(filename = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs/Elasticity_allYrs.png",
 #    width = 8, height = 6, units = "in", res = 600)
 
 par(mfrow = c(4,3)) # so each row is a population
@@ -2158,10 +2159,10 @@ Graphs
 # save plot
 # ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
 #        filename = "StableSizeDist.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = Graphs, dpi = 600, width = 8, height = 6,
 #        filename = "StableSizeDist.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 ```
 
 # Stochastic Growth Rates
@@ -2579,10 +2580,10 @@ elas.fig
 
 # ggsave(plot = elas.fig, dpi = 600, width = 12, height = 6,
 #        filename = "Elasticity_ParamsYr1.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = elas.fig, dpi = 600, width = 12, height = 6,
 #        filename = "Elasticity_ParamsYr1.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 
 ### make it with multiple panels
 p <- ltre_lambda %>% 
@@ -2665,10 +2666,10 @@ Graphs
 
 # ggsave(plot = Graphs, dpi = 600, width = 12, height = 10,
 #        filename = "Elasticity_ParamsYr1.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = Graphs, dpi = 600, width = 12, height = 10,
 #        filename = "Elasticity_ParamsYr1.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 ```
 
 
@@ -2703,10 +2704,10 @@ elas.fig.all
 
 # ggsave(plot = elas.fig.all, dpi = 600, width = 12, height = 6,
 #        filename = "Elasticity_Params_AllYr.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = elas.fig.all, dpi = 600, width = 12, height = 6,
 #        filename = "Elasticity_Params_AllYr.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 ```
 
 # Simulations
@@ -2860,10 +2861,10 @@ p <- ggplot(SeedSurv_lambda %>%
 p
 # ggsave(plot = p, dpi = 600, width = 12, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Surv_Sim.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = p, dpi = 600, width = 12, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Surv_Sim.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 
 # Make separate panels for each year/pop combination for the supplemental
 SeedSurv_lambda2 <- SeedSurv_lambda# %>%
@@ -2901,10 +2902,10 @@ pAll
 
 # ggsave(plot = pAll, dpi = 600, width = 10, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Surv_Sim_Split.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = pAll, dpi = 600, width = 10, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Surv_Sim_Split.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 
 ```
 
@@ -3056,10 +3057,10 @@ p2
 
 # ggsave(plot = p2, dpi = 600, width = 12, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Germ_Sim.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = p2, dpi = 600, width = 12, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Germ_Sim.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 
 # Make a figure separating the year/pop combinations for the supplemental
 # Just requires adding to the group_by for each SeedSurv dataframe
@@ -3110,10 +3111,10 @@ pAll
 
 # ggsave(plot = pAll, dpi = 600, width = 10, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Germ_Sim_Split.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = pAll, dpi = 600, width = 10, height = 8, # was 12w x 6 h
 #        filename = "Seedling_Germ_Sim_Split.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 ```
 
 Make a figure with the two simulations
@@ -3128,10 +3129,10 @@ Graphs
 
 # ggsave(plot = Graphs, dpi = 600, width = 8, height = 8, # was 12w x 6 h
 #        filename = "Combined_Sims.png",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 # ggsave(plot = Graphs, dpi = 600, width = 8, height = 8, # was 12w x 6 h
 #        filename = "Combined_Sims.pdf",
-#        path = "C:/Users/awied/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
+#        path = "C:/Users/ComputerName/Documents/uLethbridge/Ch_1_Wood-poppy/Graphs")
 ```
 
 
