@@ -60,10 +60,6 @@ Data need to be formatted so that populations are rows and years are
  match up in each dataset.
  
 ```{r}
-################################################################################
-########## Capture Histories ###################################################
-################################################################################
-
 
 ################################################################################
 ########## Population Counts ###################################################
@@ -105,6 +101,7 @@ Counts <- Counts %>%
 ```
 
 Remove seedlings from count data
+Seedling counts are always huge underestimates
 ```{r}
 Counts2 <- Wood_Poppy_Vertical %>%
   group_by(Population, Year) %>%
@@ -152,14 +149,14 @@ Counts3 <- Counts3 %>%
   
 Counts3
 
-Counts3[2,5] <- 0 # only seedlings at Denfield
-Counts3[2,6] <- 0 # only seedlings at Denfield
+Counts3[2,5] <- 0 # only seedlings at Denfield, so no plants in the "counts"
+Counts3[2,6] <- 0 # only seedlings at Denfield so no plants in the "counts"
 Counts3[6,3] <- NA
 Counts3[6,4] <- NA
 Counts3[6,5] <- NA
 Counts3[6,2] <- 542
 
-# Fix Ilderton
+# Fix Ilderton data--from count datasheet to remove seedlings
 Counts3[4,3] <- NA
 Counts3[4,4] <- 1145
 Counts3[4,5] <- 927
@@ -170,8 +167,8 @@ Combine all needed data
 ```{r}
 
 # Different start years for recapture at different sites
-# WSP did not tag at Ilderton or RBG, so no capture data
-# until 2022
+# WSP did not tag plantsat Ilderton or RBG, so no capture
+# data until 2022
 start <- c(1, 1, 1, 3, 1, 3)
 end <- c(6, 6, 6, 6, 3, 6)
 # Set the start and end years for the population counts
@@ -184,7 +181,7 @@ end_c <- c(6, 6, 6, 6, 3, 6)
 pinit <- dUnif(lower = rep(1, 6), upper = apply(Counts, 1, max, na.rm = T))
 
 # Set initial seed number sizes--this is the max number of seeds
-# produced in a year at each population (see the priors section)
+# produced in a year at each population (see the priors section of model)
 #pinitS <- dUnif(lower = c(1,1,1,1,1,1), upper = c( 11696,2079, 136063,2079,37424,19956))
 pinitS <- c(11696,500, 136063,32079,37424,19956)
 
@@ -589,7 +586,7 @@ for (t in 1:(nyears-1)){
 
 
 # Average germination rate
-mean.germ ~ dbeta(105+1, (2025-105+1))   # instead of fixing it, use as a prior
+mean.germ ~ dbeta(105+1, (2025-105+1))   # use as a prior
 
 for (t in 1:(nyears+K)){
   # Flowering
@@ -616,7 +613,7 @@ N[2,start_c] ~ dcat(piniP)  # Small plants
 N[3,start_c] ~ dcat(piniP)  # Large plants
 
 # Process model over time: our model of population dynamics
-# This is the life-cycle diagram
+# This is the life-cycle transitions
 
 for (t in (start_c + 1):(end + K)){
   ## Seedlings
@@ -890,8 +887,7 @@ out2 <- jags(jags.data, inits, parameters, "~/Research/Data/Population Models/In
 endTime <- Sys.time(); endTime - startTime
 
 # After the model runs, check the trace plots to confirm convergence
-# The model I have now has pretty good convergence, but the vs2 is
-# a little bad
+# The model I have now has pretty good convergence
 # All Rhat values need to be less than 1.1
 
 # traceplot(out2)
@@ -935,8 +931,7 @@ out2 <- jags(jags.data, inits, parameters, "~/Research/Data/Population Models/In
 endTime <- Sys.time(); endTime - startTime
 
 # After the model runs, check the trace plots to confirm convergence
-# The model I have now has pretty good convergence, but the vs2 is
-# a little bad
+# The model I have now has pretty good convergence
 # All Rhat values need to be less than 1.1
 
 # traceplot(out2)
@@ -1331,6 +1326,7 @@ Graphs
 
 
 # Recapture rate
+For each population
 ```{r}
 # RBG
 jags.data <- readRDS(file = "~/Research/Data/IPM_Formatted_STYL/Output/JAGSdata_RBG.rds")
@@ -1373,6 +1369,7 @@ sum(jags.data$marr[,16])
 ```
 
 # Vital Rates
+for each population
 ```{r}
 
 # ann.growth.rate

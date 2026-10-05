@@ -41,7 +41,7 @@ SurvData <- read.csv("~/Research/Data/Github Code/Stylophorum-IPMs/SurvData_IPro
 
 Add data on average number of seeds by population
 ```{r}
-#Average seed count by population in 2022 (E. Neigel, personal communication)
+#Average seed count per fruit by population in 2022 (E. Neigel, personal communication)
 Bayfield_seeds <- 38.6
 Fanshawe_seeds <- 87.5
 Ilderton_seeds <- 37.0
@@ -49,7 +49,7 @@ Meadowlily_seeds <- 21.3
 
 #no data on RBG, and no seeds collected at Denfield
 #For these two locations, I will average the four sets
-# of seed averages that I have
+# of seeds per plant averages that I have
 Denfield_seeds <- mean(Bayfield_seeds, Fanshawe_seeds,
                        Ilderton_seeds, Meadowlily_seeds)
 RBG_seeds <- mean(Bayfield_seeds, Fanshawe_seeds,
@@ -113,7 +113,7 @@ Probability of survival
 probability of establishment
 distribution of recruit sizes
 probability of survival
-probability of growth
+growth or retrogression
 
 
 Code info from: Merow et al. 2014, Rees et al. 2014
@@ -128,7 +128,7 @@ Models are confirmed as meeting assumptions in the IProj_M_regressions
 ```{r Format and Organize Data}
 ######### Modify Dataframes ################################
 
-# Remove Ilderton 334 - these data are wrong
+# Remove Ilderton 334 - these data are wrong (values incorrect)
 SurvData <- SurvData %>%
   filter(Individual != "334")
 
@@ -172,7 +172,7 @@ Estab_Plants <- Estab_Plants %>%
                                TRUE ~ 0))
  
 # Split by population
-# Because I can't figure out the 3-way interaction to have models of
+# To avoid complications of a 3-way interaction of
 # Population x Year x Size, I'm splitting everything up by population
  BEstab_Plants <- Estab_Plants %>%
   filter(Population == "Bayfield")
@@ -198,7 +198,7 @@ Vital Rate Regressions and Probabilities
 The code for these is mostly based on:
 https://github.com/jloesberg/Primula/blob/main/scripts/primula_IPM.rmd
 
-and also on Kuss et al. 2008 and Lemmer et al. 2021
+and also on Kuss et al. 2008 (Journal of Ecology) and Lemmer et al. 2021 (Basic and Applied Ecology)
 
 
 Then run the regressions and set up parameters
@@ -216,7 +216,7 @@ Prob_Germ_1 <- 105/2025 #about 5%
 #Year 2 (two years after seeds fall--one year in seed bank)
 Prob_Germ_2 <- 3/847 # 0.35%
 
-# Seed viability (after first year)
+# Seed viability (survival in seedbank, after first year)
 Prob_Surv_Seed <- 58/803
 
 ######### Probability of Establishment #####################
@@ -475,7 +475,7 @@ DF <- c(NA, Anova(Surv_ModelB)$Df, NA, Anova(Surv_ModelF)$Df,NA, Anova(Surv_Mode
         NA, Anova(Flower_ModelB)$Df, NA, Anova(Flower_ModelF)$Df, NA, Anova(Flower_ModelI)$Df, NA, Anova(Flower_ModelR)$Df,
         NA, Anova(Seed_ModelB)$Df, NA, Anova(Seed_ModelF)$Df, NA, Anova(Seed_ModelI)$Df, NA, Anova(Seed_ModelR)$Df)
 
-# Need to re-run if change order of things in GLMs above!!!
+# Need to re-run if change order of things in GLMs above (e.g. switch year and height) !!!
 AICModel <- c(drop1(Surv_ModelB)$AIC, drop1(Surv_ModelF)$AIC, drop1(Surv_ModelI)$AIC, drop1(Surv_ModelR)$AIC,
               NA, NA, drop1(Grow_ModelB)$AIC, NA, NA, drop1(Grow_ModelF)$AIC, NA, NA, drop1(Grow_ModelI)$AIC, NA, NA, drop1(Grow_ModelR)$AIC,
               NA, NA, drop1(Flower_ModelB)$AIC, NA, NA, drop1(Flower_ModelF)$AIC, NA, NA, drop1(Flower_ModelI)$AIC, NA, NA, drop1(Flower_ModelR)$AIC,
@@ -674,7 +674,7 @@ p4 <- ggplot(Estab_Plants, aes(x = Height_cm_t, y = Survival_t1, col = Populatio
   theme(axis.text=element_text(size=14),
         axis.title=element_text(size=16))
 
-# Seeds
+# Seeds per plant
 
 p3 <- ggplot(Estab_Plants2, aes(x = Height_cm_t, y = log(Seed_Number_t1),
                          col = Population, linetype = Population)) +
@@ -853,7 +853,7 @@ grow <-left_join(g.int, g.slope, by = c("Population", "boot.group"))
 grow <-left_join(grow, g.slope2, by = c("Population", "boot.group"))
 
 # Growth Variance
-# For the growth parameter, need variation
+# For the growth parameter, need a measure of variance for the model
 growth_var <- data.frame(Grow_sd = double(), Population = double())
 growth_var[1,1] <- Bgrowth_var
 growth_var[2,1] <- Fgrowth_var
@@ -930,7 +930,7 @@ f.int <- as.data.frame(rbind(Bf.int, Ff.int, If.int, Rf.int))
 fl<-left_join(f.int, f.slope, by = c("Population", "boot.group"))
 fl <-left_join(fl, f.slope2, by = c("Population", "boot.group"))
 
-# Seeds
+# Seeds per plant
 se.samp <- rbind(Bse.samp, Fse.samp, Ise.samp, Rse.samp)
 
 se.slope <- data.frame(se.slope = se.samp[, 3], Population = c(rep(1,1000), rep(2,1000),rep(3,1000),rep(4,1000)), boot.group = seq(1, boot, by = 1))
@@ -1181,7 +1181,7 @@ max.size <- 1.1 * max(c(SurvData$Height_cm_t, SurvData$Height_cm_t1), na.rm = T)
 #building off of code from Tom Miller:
 mat.size = 100 #dimensions of continuous matrix
 
-# Three-year seedbank
+# Three-year seedbank (seedbank excluded from final model, commented out here)
 bigmatrix <- function(params_list, mat.size){
   n <- mat.size #matrix size
   L <- min.size #lower integration limit
@@ -2282,6 +2282,7 @@ for (i in n.runin:(n.est-n.runin)) {
 }
 
 #  I need to run this function on each population separately
+# to get a stochastic lambda for each population
 # Each population has 3 rows in the Params dataframe
 # I'll just hard-code it
 #Bayfield
@@ -3136,7 +3137,8 @@ Graphs
 ```
 
 
-# Mean survival
+# Median survival
+Estimates of median survival of plants in different size classes
 ```{r}
 # https://stackoverflow.com/questions/71475513/confidence-interval-of-prediction-from-glm-model
 
